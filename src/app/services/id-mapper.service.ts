@@ -1,6 +1,6 @@
 import { Injectable } from "@angular/core";
 import { INITIAL_CONVERSATIONS } from "../data/conversations";
-import { INITIAL_MESSAGES }      from "../data/messages";
+import { INITIAL_MESSAGES } from "../data/messages";
 
 /**
  * Bidirectional mapper between human-readable internal IDs (e.g. `origin-dev`,
@@ -19,10 +19,10 @@ import { INITIAL_MESSAGES }      from "../data/messages";
  */
 @Injectable({ providedIn: "root" })
 export class IdMapperService {
-  private convToUrl    = new Map<string, string>();
-  private urlToConv    = new Map<string, string>();
-  private msgToUrl     = new Map<string, string>();
-  private urlToMsg     = new Map<string, string>();
+  private convToUrl = new Map<string, string>();
+  private urlToConv = new Map<string, string>();
+  private msgToUrl = new Map<string, string>();
+  private urlToMsg = new Map<string, string>();
   /** Custom sections only — built-in section IDs (`direct`, `customers`, etc.)
    *  stay readable in URLs. Maps the custom-section internal ID (e.g.
    *  `custom-1730412345`) to a short opaque token. */

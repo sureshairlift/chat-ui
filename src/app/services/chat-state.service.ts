@@ -5,7 +5,7 @@ import {
   SectionId, Reaction, PortalSession,
 } from "../models/types";
 import { INITIAL_CONVERSATIONS } from "../data/conversations";
-import { INITIAL_MESSAGES }      from "../data/messages";
+import { INITIAL_MESSAGES } from "../data/messages";
 import { CUSTOMER_PORTAL_SESSIONS } from "../data/dashboard";
 
 /**
@@ -20,35 +20,35 @@ import { CUSTOMER_PORTAL_SESSIONS } from "../data/dashboard";
 export class ChatStateService {
   /* ---------------------- Core data ---------------------- */
 
-  readonly conversations  = signal<Conversation[]>(INITIAL_CONVERSATIONS);
+  readonly conversations = signal<Conversation[]>(INITIAL_CONVERSATIONS);
   readonly messagesByConv = signal<MessagesByConv>(structuredClone(INITIAL_MESSAGES));
 
   /* ---------------------- View / selection ---------------------- */
 
-  readonly view            = signal<ViewKey>("home");
+  readonly view = signal<ViewKey>("home");
   readonly selectedSection = signal<SectionId>("all");
-  readonly activeConv      = signal<string | null>("origin-software");
-  readonly userRole        = signal<UserRole>("customer_support");
+  readonly activeConv = signal<string | null>("origin-software");
+  readonly userRole = signal<UserRole>("customer_support");
 
   /* ---------------------- Per-message state ---------------------- */
 
   readonly reactions = signal<ReactionsMap>({});
   readonly pinnedMsgs = signal<PinnedMap>({});
-  readonly savedMsgs  = signal<SavedMap>({});
-  readonly drafts     = signal<DraftsMap>({});
+  readonly savedMsgs = signal<SavedMap>({});
+  readonly drafts = signal<DraftsMap>({});
   readonly editingMsgId = signal<string | null>(null);
 
   /* ---------------------- Tasks ---------------------- */
 
   readonly convTasks = signal<ConvTasksMap>({
     "origin-software": [
-      { id: "task-1", title: "Review rate revision PR",         done: false, assignee: "me",  due: "Today" },
-      { id: "task-2", title: "Reply to Ashwath on Zeplin spec", done: false, assignee: "me",  due: "Today" },
-      { id: "task-3", title: "Untouched > 3 weeks filter",      done: true,  assignee: "rajkumar" },
+      { id: "task-1", title: "Review rate revision PR", done: false, assignee: "me", due: "Today" },
+      { id: "task-2", title: "Reply to Ashwath on Zeplin spec", done: false, assignee: "me", due: "Today" },
+      { id: "task-3", title: "Untouched > 3 weeks filter", done: true, assignee: "rajkumar" },
     ],
     "ext-acme": [
       { id: "task-acme-1", title: "Send revised quote with seasonal flex tier", done: false, assignee: "me", due: "Today" },
-      { id: "task-acme-2", title: "Schedule follow-up call",                    done: false, assignee: "me" },
+      { id: "task-acme-2", title: "Schedule follow-up call", done: false, assignee: "me" },
     ],
   });
 
@@ -91,28 +91,28 @@ export class ChatStateService {
 
   /* ---------------------- Side panels (top-level booleans, mirror React) --------- */
 
-  readonly showSearch       = signal(false);
-  readonly showThread       = signal<string | null>(null);
-  readonly showBoard        = signal(false);
-  readonly showFollowing    = signal(false);
-  readonly showTasks        = signal(false);
-  readonly showPinned       = signal(false);
-  readonly showSharedMedia  = signal(false);
+  readonly showSearch = signal(false);
+  readonly showThread = signal<string | null>(null);
+  readonly showBoard = signal(false);
+  readonly showFollowing = signal(false);
+  readonly showTasks = signal(false);
+  readonly showPinned = signal(false);
+  readonly showSharedMedia = signal(false);
   readonly showStatusEditor = signal(false);
 
   /* ---------------------- Layout / resizable ---------------------- */
 
-  readonly sidebarCollapsed   = signal(false);
-  readonly sidebarFullScreen  = signal(false);
+  readonly sidebarCollapsed = signal(false);
+  readonly sidebarFullScreen = signal(false);
   readonly sidePanelFullscreen = signal(false);
 
   /** Panel widths persist to localStorage so the user's resize preference
    *  survives reloads. Initial values come from the loaders below; the
    *  constructor wires an effect that writes back on every change. */
   private readonly SIDEBAR_WIDTH_KEY = "airlift-chat:sidebar-width";
-  private readonly THREAD_WIDTH_KEY  = "airlift-chat:thread-width";
-  readonly sidebarWidth   = signal(this.loadWidth(this.SIDEBAR_WIDTH_KEY, 320, 280, 620));
-  readonly threadWidth    = signal(this.loadWidth(this.THREAD_WIDTH_KEY,  420, 320, 640));
+  private readonly THREAD_WIDTH_KEY = "airlift-chat:thread-width";
+  readonly sidebarWidth = signal(this.loadWidth(this.SIDEBAR_WIDTH_KEY, 320, 280, 620));
+  readonly threadWidth = signal(this.loadWidth(this.THREAD_WIDTH_KEY, 420, 320, 640));
   readonly threadResizing = signal(false);
   readonly sidebarResizing = signal(false);
 
@@ -149,7 +149,7 @@ export class ChatStateService {
     this.userStatus.set(value);
     if (typeof localStorage !== "undefined") {
       if (value) localStorage.setItem(this.USER_STATUS_KEY, JSON.stringify(value));
-      else       localStorage.removeItem(this.USER_STATUS_KEY);
+      else localStorage.removeItem(this.USER_STATUS_KEY);
     }
   }
   clearUserStatus(): void { this.setUserStatus(null); }
@@ -415,7 +415,7 @@ export class ChatStateService {
   moveSection(from: number, to: number): void {
     this.sectionOrder.update((order) => {
       if (from < 0 || from >= order.length) return order;
-      if (to   < 0 || to   >= order.length) return order;
+      if (to < 0 || to >= order.length) return order;
       if (from === to) return order;
       const next = order.slice();
       const [item] = next.splice(from, 1);
@@ -626,13 +626,13 @@ export class ChatStateService {
     this.closeAllSidePanels();
     this.showThread.set(msgId);
   }
-  openBoard():       void { this.closeAllSidePanels(); this.showBoard.set(true); }
-  openFollowing():   void { this.closeAllSidePanels(); this.showFollowing.set(true); }
-  openTasks():       void { this.closeAllSidePanels(); this.showTasks.set(true); }
-  openPinned():      void { this.closeAllSidePanels(); this.showPinned.set(true); }
+  openBoard(): void { this.closeAllSidePanels(); this.showBoard.set(true); }
+  openFollowing(): void { this.closeAllSidePanels(); this.showFollowing.set(true); }
+  openTasks(): void { this.closeAllSidePanels(); this.showTasks.set(true); }
+  openPinned(): void { this.closeAllSidePanels(); this.showPinned.set(true); }
   openSharedMedia(): void { this.closeAllSidePanels(); this.showSharedMedia.set(true); }
-  openSearch():      void { this.showSearch.set(true); }
-  openStatusEditor():  void { this.showStatusEditor.set(true); }
+  openSearch(): void { this.showSearch.set(true); }
+  openStatusEditor(): void { this.showStatusEditor.set(true); }
   closeStatusEditor(): void { this.showStatusEditor.set(false); }
 
   /* ----- Floating conversation popups (Gmail/GChat-style) ----- */
@@ -666,13 +666,13 @@ export class ChatStateService {
     this.setActiveConv(convId);
   }
 
-  closeThread():       void { this.showThread.set(null); }
-  closeBoard():        void { this.showBoard.set(false); }
-  closeFollowing():    void { this.showFollowing.set(false); }
-  closeTasks():        void { this.showTasks.set(false); }
-  closePinned():       void { this.showPinned.set(false); }
-  closeSharedMedia():  void { this.showSharedMedia.set(false); }
-  closeSearch():       void { this.showSearch.set(false); }
+  closeThread(): void { this.showThread.set(null); }
+  closeBoard(): void { this.showBoard.set(false); }
+  closeFollowing(): void { this.showFollowing.set(false); }
+  closeTasks(): void { this.showTasks.set(false); }
+  closePinned(): void { this.showPinned.set(false); }
+  closeSharedMedia(): void { this.showSharedMedia.set(false); }
+  closeSearch(): void { this.showSearch.set(false); }
 
   /* ----- Reply ----- */
 

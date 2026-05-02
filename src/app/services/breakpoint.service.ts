@@ -11,10 +11,10 @@ import { Injectable, signal } from "@angular/core";
  */
 @Injectable({ providedIn: "root" })
 export class BreakpointService {
-  readonly isMobile  = signal<boolean>(false);
-  readonly isTablet  = signal<boolean>(false);
+  readonly isMobile = signal<boolean>(false);
+  readonly isTablet = signal<boolean>(false);
   readonly isDesktop = signal<boolean>(true);
-  readonly width     = signal<number>(typeof window !== "undefined" ? window.innerWidth : 1200);
+  readonly width = signal<number>(typeof window !== "undefined" ? window.innerWidth : 1200);
 
   constructor() {
     if (typeof window !== "undefined") {
