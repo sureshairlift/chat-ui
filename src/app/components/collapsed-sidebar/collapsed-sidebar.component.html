@@ -1,98 +1,102 @@
-    <aside class="w-[60px] h-full shrink-0 flex flex-col bg-white border-r border-gray-200 items-center"
+    <aside class="w-[60px] h-full shrink-0 flex flex-col bg-white border-r border-gray-200 items-center min-h-0"
       style="overflow: visible;">
-      <div class="flex-1 flex flex-col items-center py-2 gap-1 w-full">
-        <!-- Search -->
-        <div class="relative group">
-          <button (click)="state.openSearch()"
-            class="h-9 w-9 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-600">
-            <app-icon name="search" [size]="16"></app-icon>
-          </button>
-          <ng-container *ngTemplateOutlet="tip; context: { label: 'Search', info: '⌘K to open from anywhere' }">
-          </ng-container>
-        </div>
+      <!-- ============== TOP (fixed): Search + New chat ==============
+           Lives outside the scroll container so these two anchors stay
+           pinned at the top of the rail regardless of how many shortcut
+           items are in the middle. -->
+      <div class="shrink-0 w-full flex flex-col items-center pt-2 gap-1">
+        <button (click)="state.openSearch()"
+          (mouseenter)="showTip($event, 'Search', '⌘K to open from anywhere')"
+          (mouseleave)="hideTip()"
+          class="shrink-0 h-9 w-9 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-600">
+          <app-icon name="search" [size]="16"></app-icon>
+        </button>
 
-        <!-- New chat (Plus) -->
-        <div class="relative group">
-          <button (click)="state.setView('home')"
-            class="h-9 w-9 rounded-full bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-700 mb-1">
-            <app-icon name="plus" [size]="18"></app-icon>
-          </button>
-          <ng-container *ngTemplateOutlet="tip; context: { label: 'New chat', info: 'Start a new conversation' }">
-          </ng-container>
-        </div>
+        <button (click)="state.setView('home')"
+          (mouseenter)="showTip($event, 'New chat', 'Start a new conversation')"
+          (mouseleave)="hideTip()"
+          class="shrink-0 h-9 w-9 rounded-full bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-700">
+          <app-icon name="plus" [size]="18"></app-icon>
+        </button>
 
         <div class="w-7 h-px bg-gray-200 my-1"></div>
+      </div>
 
-        <!-- Items -->
-        <div *ngFor="let it of items()" class="relative group">
-          <button (click)="it.onClick()" [class]="btnClassFor(it)">
-            <!-- Custom dashboard icon (4-tile grid) -->
-            <svg *ngIf="it.iconCustom === 'dashboard'" width="18" height="18" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="7" height="9" rx="1.5" />
-              <rect x="14" y="3" width="7" height="5" rx="1.5" />
-              <rect x="14" y="12" width="7" height="9" rx="1.5" />
-              <rect x="3" y="16" width="7" height="5" rx="1.5" />
-            </svg>
-            <!-- Custom threads icon -->
-            <svg *ngIf="it.iconCustom === 'threads'" width="18" height="18" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              <line x1="8" y1="9" x2="16" y2="9" />
-              <line x1="8" y1="13" x2="13" y2="13" />
-            </svg>
-            <app-icon *ngIf="!it.iconCustom" [name]="it.iconName" [size]="18"></app-icon>
-          </button>
-          <ng-container *ngTemplateOutlet="tip; context: { label: it.tip, info: it.info }"></ng-container>
-        </div>
+      <!-- ============== MIDDLE (scrollable): shortcuts + sections ==============
+           This is the only section that scrolls. `min-h-0` lets `flex-1`
+           shrink below content height; `overflow-y-auto` then clips and
+           scrolls. Each button has `shrink-0` so flex-col never compresses
+           them — they keep their full 36×36px size and the user scrolls
+           through them naturally when the list is taller than the rail. -->
+      <div (scroll)="hideTip()"
+           class="flex-1 min-h-0 overflow-y-auto scrollable flex flex-col items-center w-full py-1 gap-1">
+        <button *ngFor="let it of items()"
+          (click)="it.onClick()"
+          (mouseenter)="showTip($event, it.tip, it.info)"
+          (mouseleave)="hideTip()"
+          [class]="btnClassFor(it) + ' shrink-0'">
+          <!-- Custom dashboard icon (4-tile grid) -->
+          <svg *ngIf="it.iconCustom === 'dashboard'" width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="9" rx="1.5" />
+            <rect x="14" y="3" width="7" height="5" rx="1.5" />
+            <rect x="14" y="12" width="7" height="9" rx="1.5" />
+            <rect x="3" y="16" width="7" height="5" rx="1.5" />
+          </svg>
+          <!-- Custom threads icon -->
+          <svg *ngIf="it.iconCustom === 'threads'" width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            <line x1="8" y1="9" x2="16" y2="9" />
+            <line x1="8" y1="13" x2="13" y2="13" />
+          </svg>
+          <app-icon *ngIf="!it.iconCustom" [name]="it.iconName" [size]="18"></app-icon>
+        </button>
 
         <!-- Custom sections divider + entries -->
         <ng-container *ngIf="state.customSections().length > 0">
-          <div class="w-7 h-px bg-gray-200 my-1"></div>
-          <div *ngFor="let s of state.customSections()" class="relative group">
-            <button (click)="state.setSection(s.id)" [class]="'h-9 w-9 rounded-full flex items-center justify-center transition ' +
+          <div class="shrink-0 w-7 h-px bg-gray-200 my-1"></div>
+          <button *ngFor="let s of state.customSections()"
+            (click)="state.setSection(s.id)"
+            (mouseenter)="showTip($event, s.label, 'Custom section')"
+            (mouseleave)="hideTip()"
+            [class]="'shrink-0 h-9 w-9 rounded-full flex items-center justify-center transition ' +
                 (state.selectedSection() === s.id ? 'bg-blue-100' : 'hover:bg-gray-100')">
-              <span [class]="'w-6 h-6 rounded-md flex items-center justify-center ' + s.color">
-                <app-icon name="hash" [size]="12" class="text-white"></app-icon>
-              </span>
-            </button>
-            <ng-container *ngTemplateOutlet="tip; context: { label: s.label, info: 'Custom section' }"></ng-container>
-          </div>
+            <span [class]="'w-6 h-6 rounded-md flex items-center justify-center ' + s.color">
+              <app-icon name="hash" [size]="12" class="text-white"></app-icon>
+            </span>
+          </button>
         </ng-container>
       </div>
 
-      <!-- Bottom: status emoji + expand button -->
-      <div class="w-full border-t border-gray-100 p-2 flex flex-col items-center gap-1.5">
-        <!-- Status emoji button — only the emoji shows in collapsed mode.
-             Click opens the editor; tooltip shows the full status text. -->
-        <div class="relative group">
-          <button (click)="state.openStatusEditor()"
-            class="h-9 w-9 rounded-full hover:bg-gray-100 flex items-center justify-center text-[16px]">
-            {{ state.userStatus()?.emoji || '😶' }}
-          </button>
-          <ng-container *ngTemplateOutlet="tip; context: {
-            label: state.userStatus()?.text || 'Set a status',
-            info: state.userStatus() ? 'Click to update' : ''
-          }"></ng-container>
-        </div>
-        <div class="relative group">
-          <button (click)="state.sidebarCollapsed.set(false)"
-            class="h-9 w-9 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-600">
-            <app-icon name="chevron-right" [size]="18"></app-icon>
-          </button>
-          <ng-container *ngTemplateOutlet="tip; context: { label: 'Expand sidebar', info: 'Show full labels' }">
-          </ng-container>
-        </div>
+      <!-- ============== BOTTOM (fixed): status + expand ============== -->
+      <div class="shrink-0 w-full border-t border-gray-100 p-2 flex flex-col items-center gap-1.5">
+        <button (click)="state.openStatusEditor()"
+          (mouseenter)="showTip($event, state.userStatus()?.text || 'Set a status', state.userStatus() ? 'Click to update' : '')"
+          (mouseleave)="hideTip()"
+          class="shrink-0 h-9 w-9 rounded-full hover:bg-gray-100 flex items-center justify-center text-[16px]">
+          {{ state.userStatus()?.emoji || '😶' }}
+        </button>
+        <button (click)="state.sidebarCollapsed.set(false)"
+          (mouseenter)="showTip($event, 'Expand sidebar', 'Show full labels')"
+          (mouseleave)="hideTip()"
+          class="shrink-0 h-9 w-9 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-600">
+          <app-icon name="chevron-right" [size]="18"></app-icon>
+        </button>
       </div>
     </aside>
 
-    <!-- Tooltip template (right of button) -->
-    <ng-template #tip let-label="label" let-info="info">
-      <span
-        class="absolute left-full ml-3 top-1/2 -translate-y-1/2 z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap">
-        <span class="block bg-gray-900 text-white text-[12px] font-medium rounded-md shadow-lg px-2.5 py-1.5">
-          {{ label }}
-          <span *ngIf="info" class="block text-[10.5px] font-normal text-gray-300 mt-0.5">{{ info }}</span>
-        </span>
+    <!-- Hover tooltip — single fixed-position element managed by
+         showTip/hideTip. `position: fixed` lifts it out of the icon
+         list's overflow-y:auto context so it never triggers a horizontal
+         scrollbar and is fully visible outside the 60px rail. -->
+    <div *ngIf="tooltip() as t"
+         class="fixed z-[100] pointer-events-none whitespace-nowrap side-panel-in"
+         [style.top.px]="t.top"
+         [style.left.px]="t.left"
+         style="transform: translateY(-50%);">
+      <span class="block bg-gray-900 text-white text-[12px] font-medium rounded-md shadow-lg px-2.5 py-1.5">
+        {{ t.label }}
+        <span *ngIf="t.info" class="block text-[10.5px] font-normal text-gray-300 mt-0.5">{{ t.info }}</span>
       </span>
-    </ng-template>
+    </div>

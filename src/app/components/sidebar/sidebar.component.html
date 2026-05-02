@@ -79,58 +79,82 @@
         <!-- Divider -->
         <div class="mx-3 my-2 border-t border-gray-200"></div>
 
-        <!-- Customer Conversations (special amber-styled) -->
-        <button (click)="state.setSection('customers')" [class]="customersBtnClass()">
-          <span
-            class="shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gradient-to-br from-amber-400 to-orange-500 shadow-sm">
-            <app-icon name="globe" [size]="12" class="text-white"></app-icon>
-          </span>
-          <span class="flex-1 text-left truncate">Customer Conversations</span>
-          <span *ngIf="counts().customers > 0" [class]="customersBadgeClass()">
-            {{ counts().customers }}
-          </span>
-          <app-icon name="chevron-right" [size]="14"
-            [class]="state.selectedSection() === 'customers' ? 'text-amber-700' : 'text-gray-400'">
-          </app-icon>
-        </button>
+        <!-- ============== Reorderable section list ==============
+             Built-ins and custom sections render through a single *ngFor
+             over `orderedSections()`. Press and drag *anywhere* on a row
+             (mouse or touch) to reorder. A small grip indicator appears
+             on hover (desktop) as a hint that the row is draggable. Order
+             persists to localStorage. -->
+        <ng-container *ngFor="let row of orderedSections(); let i = index; trackBy: trackBySection">
+          <div #sectionRowEl
+               (pointerdown)="onRowPointerDown(i, $event)"
+               [class]="'group/sec relative rounded-md transition ' + rowDragClass(i)"
+               style="touch-action: none;">
 
-        <!-- Airlift Intelligence (gradient) -->
-        <button (click)="state.setSection('ai')" [class]="aiBtnClass()">
-          <span
-            class="shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500">
-            <app-icon name="sparkles" [size]="12" class="text-white"></app-icon>
-          </span>
-          <span class="flex-1 text-left truncate">Airlift Intelligence</span>
-          <span *ngIf="counts().ai > 0" [class]="aiBadgeClass()">{{ counts().ai }}</span>
-          <app-icon name="chevron-right" [size]="14"
-            [class]="state.selectedSection() === 'ai' ? 'text-purple-700' : 'text-gray-400'">
-          </app-icon>
-        </button>
+            <!-- Hover grip indicator — purely decorative, hints the row is
+                 draggable. Sits on the left edge, fades in on hover. The
+                 element is pointer-events-none so it never steals clicks
+                 from the row underneath. -->
+            <span class="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1.5 w-3 h-6 items-center justify-center text-gray-400 opacity-0 group-hover/sec:opacity-100 pointer-events-none transition"
+                  aria-hidden="true">
+              <svg width="8" height="14" viewBox="0 0 10 14" fill="currentColor">
+                <circle cx="2" cy="2" r="1.2"/><circle cx="8" cy="2" r="1.2"/>
+                <circle cx="2" cy="7" r="1.2"/><circle cx="8" cy="7" r="1.2"/>
+                <circle cx="2" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/>
+              </svg>
+            </span>
 
-        <!-- Built-in section headers -->
-        <app-section-header label="Direct messages" [count]="counts().direct"
-          [active]="state.selectedSection() === 'direct'" (clicked)="state.setSection('direct')">
-          <app-icon name="message-square" [size]="18"></app-icon>
-        </app-section-header>
+            <!-- Customer Conversations (special amber styling) -->
+            <button *ngIf="row.kind === 'customers'"
+                    (click)="state.setSection('customers')"
+                    [class]="customersBtnClass()">
+              <span class="shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gradient-to-br from-amber-400 to-orange-500 shadow-sm">
+                <app-icon name="globe" [size]="12" class="text-white"></app-icon>
+              </span>
+              <span class="flex-1 text-left truncate">{{ row.label }}</span>
+              <span *ngIf="row.count > 0" [class]="customersBadgeClass()">{{ row.count }}</span>
+              <app-icon name="chevron-right" [size]="14"
+                [class]="state.selectedSection() === 'customers' ? 'text-amber-700' : 'text-gray-400'">
+              </app-icon>
+            </button>
 
-        <app-section-header label="Test Section" [count]="counts().test" [active]="state.selectedSection() === 'test'"
-          (clicked)="state.setSection('test')">
-          <app-icon name="folder-open" [size]="18"></app-icon>
-        </app-section-header>
+            <!-- Airlift Intelligence (gradient) -->
+            <button *ngIf="row.kind === 'ai'"
+                    (click)="state.setSection('ai')"
+                    [class]="aiBtnClass()">
+              <span class="shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500">
+                <app-icon name="sparkles" [size]="12" class="text-white"></app-icon>
+              </span>
+              <span class="flex-1 text-left truncate">{{ row.label }}</span>
+              <span *ngIf="row.count > 0" [class]="aiBadgeClass()">{{ row.count }}</span>
+              <app-icon name="chevron-right" [size]="14"
+                [class]="state.selectedSection() === 'ai' ? 'text-purple-700' : 'text-gray-400'">
+              </app-icon>
+            </button>
 
-        <app-section-header label="Spaces" [count]="counts().spaces" [active]="state.selectedSection() === 'spaces'"
-          (clicked)="state.setSection('spaces')">
-          <app-icon name="hash" [size]="18"></app-icon>
-        </app-section-header>
+            <!-- Built-in: Direct / Test / Spaces -->
+            <app-section-header
+              *ngIf="row.kind === 'direct' || row.kind === 'test' || row.kind === 'spaces'"
+              [label]="row.label" [count]="row.count"
+              [active]="state.selectedSection() === row.id"
+              (clicked)="state.setSection(row.id)">
+              <app-icon *ngIf="row.kind === 'direct'" name="message-square" [size]="18"></app-icon>
+              <app-icon *ngIf="row.kind === 'test'"   name="folder-open"    [size]="18"></app-icon>
+              <app-icon *ngIf="row.kind === 'spaces'" name="hash"           [size]="18"></app-icon>
+            </app-section-header>
 
-        <!-- Custom sections -->
-        <app-section-header *ngFor="let s of state.customSections()" [label]="s.label"
-          [count]="customSectionCount(s.id)" [active]="state.selectedSection() === s.id"
-          (clicked)="state.setSection(s.id)">
-          <span [class]="'w-5 h-5 rounded-md flex items-center justify-center ' + s.color">
-            <app-icon name="hash" [size]="12" class="text-white"></app-icon>
-          </span>
-        </app-section-header>
+            <!-- Custom sections -->
+            <app-section-header
+              *ngIf="row.kind === 'custom'"
+              [label]="row.label" [count]="row.count"
+              [active]="state.selectedSection() === row.id"
+              (clicked)="state.setSection(row.id)">
+              <span [class]="'w-5 h-5 rounded-md flex items-center justify-center ' + (row.custom?.color || 'bg-gray-400')">
+                <app-icon name="hash" [size]="12" class="text-white"></app-icon>
+              </span>
+            </app-section-header>
+          </div>
+        </ng-container>
 
         <!-- New section creator -->
         <div *ngIf="addingSection(); else addBtn" class="flex items-center gap-2 px-3 py-1.5 mt-1">

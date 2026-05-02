@@ -120,3 +120,9 @@ html, body {
   user-select: none !important;
   cursor: col-resize !important;
 }
+
+/* Lock cursor + suppress text selection during a section reorder drag */
+.is-dragging-section, .is-dragging-section * {
+  user-select: none !important;
+  cursor: grabbing !important;
+}

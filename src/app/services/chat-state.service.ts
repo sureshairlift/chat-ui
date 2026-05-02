@@ -56,6 +56,39 @@ export class ChatStateService {
 
   readonly customSections = signal<CustomSection[]>([]);
 
+  /** Default order for the sidebar's section list. Built-ins first in
+   *  their pre-existing order, then any custom sections appended on
+   *  creation. The user can drag/up-down-arrow to reorder, and the new
+   *  order persists across reloads via localStorage. */
+  private readonly DEFAULT_SECTION_ORDER = ["customers", "ai", "direct", "test", "spaces"];
+  private readonly SECTION_ORDER_KEY = "airlift-chat:section-order";
+  readonly sectionOrder = signal<string[]>(this.loadSectionOrder());
+
+  private loadSectionOrder(): string[] {
+    if (typeof localStorage === "undefined") return [...this.DEFAULT_SECTION_ORDER];
+    try {
+      const raw = localStorage.getItem(this.SECTION_ORDER_KEY);
+      if (!raw) return [...this.DEFAULT_SECTION_ORDER];
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [...this.DEFAULT_SECTION_ORDER];
+      // Sanitize: keep only string IDs the persisted array provides, then
+      // append any default built-ins that the saved version is missing
+      // (e.g. user upgraded the app and we added a new built-in section).
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const v of arr) {
+        if (typeof v !== "string") continue;
+        if (seen.has(v)) continue;
+        seen.add(v);
+        out.push(v);
+      }
+      for (const id of this.DEFAULT_SECTION_ORDER) {
+        if (!seen.has(id)) out.push(id);
+      }
+      return out;
+    } catch { return [...this.DEFAULT_SECTION_ORDER]; }
+  }
+
   /* ---------------------- Side panels (top-level booleans, mirror React) --------- */
 
   readonly showSearch       = signal(false);
@@ -261,6 +294,17 @@ export class ChatStateService {
       }
     });
 
+    // Persist sidebar section order. Updates whenever the user drags or
+    // taps the up/down arrows in rearrange mode, or when a new custom
+    // section is added (which appends to the order). Reads only — no
+    // signal writes — so allowSignalWrites isn't needed.
+    effect(() => {
+      const order = this.sectionOrder();
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem(this.SECTION_ORDER_KEY, JSON.stringify(order));
+      }
+    });
+
     // Auto-clear expired user statuses. Every 30s we check whether the
     // current status has hit its clearAt timestamp; if so, drop it. 30s
     // is a coarse but cheap cadence — for a UX where the user picks
@@ -358,6 +402,38 @@ export class ChatStateService {
     ];
     const color = palette[this.customSections().length % palette.length];
     this.customSections.update((list) => [...list, { id, label, color }]);
+    // Append to the persisted order so the new section shows up at the
+    // bottom of the sidebar list rather than wherever the default order
+    // would place it.
+    this.sectionOrder.update((order) =>
+      order.includes(id) ? order : [...order, id]
+    );
+  }
+
+  /** Reorder a section by moving it from `from` to `to` (both indices into
+   *  `sectionOrder`). No-op if either index is out of range. */
+  moveSection(from: number, to: number): void {
+    this.sectionOrder.update((order) => {
+      if (from < 0 || from >= order.length) return order;
+      if (to   < 0 || to   >= order.length) return order;
+      if (from === to) return order;
+      const next = order.slice();
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
+  }
+
+  /** Convenience for the rearrange-mode up/down arrows. */
+  moveSectionUp(id: string): void {
+    const order = this.sectionOrder();
+    const i = order.indexOf(id);
+    if (i > 0) this.moveSection(i, i - 1);
+  }
+  moveSectionDown(id: string): void {
+    const order = this.sectionOrder();
+    const i = order.indexOf(id);
+    if (i >= 0 && i < order.length - 1) this.moveSection(i, i + 1);
   }
 
   /* ----- Messages ----- */

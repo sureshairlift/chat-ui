@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from "@angular/core";
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
 import { IconComponent } from "../icon/icon.component";
@@ -105,6 +105,28 @@ export class CollapsedSidebarComponent {
         onClick: () => this.state.setSection("spaces") },
     ];
   });
+
+  /** Active hover-tooltip state. We render a single `position: fixed`
+   *  element from this signal, computed from the hovered button's
+   *  bounding rect. Using `fixed` instead of per-row `absolute` is what
+   *  lets the tooltip escape the icon list's overflow-y:auto container —
+   *  otherwise the tooltip would extend horizontally inside the scroller
+   *  and trigger a horizontal scrollbar (browsers force overflow-x:auto
+   *  whenever overflow-y:auto is set, which clips & scrolls). */
+  tooltip = signal<{ label: string; info?: string; top: number; left: number } | null>(null);
+
+  showTip(e: MouseEvent | FocusEvent, label: string, info?: string): void {
+    const t = (e.currentTarget as HTMLElement | null) ?? (e.target as HTMLElement | null);
+    if (!t) return;
+    const r = t.getBoundingClientRect();
+    this.tooltip.set({
+      label,
+      info: info || undefined,
+      top: r.top + r.height / 2,
+      left: r.right + 12,
+    });
+  }
+  hideTip(): void { this.tooltip.set(null); }
 
   btnClassFor(it: CollapsedItem): string {
     const base = "h-9 w-9 rounded-full flex items-center justify-center transition";
