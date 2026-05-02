@@ -1,0 +1,154 @@
+    <div [class]="rootClass" [style.width.px]="fullWidth ? null : (width || 420)">
+      <!-- ============== Header ============== -->
+      <ng-container *ngIf="fullWidth; else desktopHeader">
+        <div class="border-b border-gray-100">
+          <!-- Top row: hamburger + search -->
+          <div class="flex items-center gap-2 px-3 pt-3 pb-2">
+            <button (click)="openDrawer.emit()"
+              class="w-9 h-9 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-700"
+              title="Open menu">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <button (click)="state.openSearch()"
+              class="flex-1 flex items-center gap-2 bg-gray-100 rounded-full px-4 py-2 text-[14px] text-gray-500 hover:bg-gray-200 transition">
+              <app-icon name="search" [size]="15"></app-icon>
+              <span>Search in chat</span>
+            </button>
+          </div>
+          <!-- Title row: home + saved messages icon -->
+          <div class="flex items-center justify-between px-4 pb-3 pt-1">
+            <h1 class="text-[22px] font-normal text-gray-900 truncate">{{ title() }}</h1>
+            <div class="flex items-center gap-2">
+              <button *ngIf="showFilters()" (click)="state.setView('starred')"
+                class="w-9 h-9 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600"
+                title="Saved messages">
+                <app-icon name="bookmark" [size]="18"></app-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+      <ng-template #desktopHeader>
+        <div class="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+          <div class="flex items-center gap-2 min-w-0">
+            <h1 class="text-[22px] font-normal text-gray-900 truncate">{{ title() }}</h1>
+          </div>
+          <div *ngIf="showFilters()" class="flex items-center gap-2">
+            <label class="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer select-none">
+              <span>Unread</span>
+              <button (click)="state.unreadOnly.set(!state.unreadOnly())"
+                [class]="'relative w-9 h-5 rounded-full transition ' + (state.unreadOnly() ? 'bg-blue-600' : 'bg-gray-300')">
+                <span [class]="'absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all shadow ' +
+                  (state.unreadOnly() ? 'left-4' : 'left-0.5')"></span>
+              </button>
+            </label>
+          </div>
+        </div>
+      </ng-template>
+
+      <!-- ============== Body ============== -->
+      <ng-container [ngSwitch]="state.selectedSection()">
+
+        <!-- AI section -->
+        <div *ngSwitchCase="'ai'" class="flex-1 overflow-y-auto scrollable">
+          <button *ngIf="aiNew()" (click)="picked.emit(aiNew()!.id)" [class]="aiNewBtnClass()"
+            style="width: calc(100% - 24px);">
+            <span
+              class="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-sm shrink-0">
+              <app-icon name="plus" [size]="16" class="text-white"></app-icon>
+            </span>
+            <div class="flex-1 min-w-0">
+              <div class="text-[14px] font-medium">New chat</div>
+              <div class="text-[12px] text-purple-700/80 mt-0.5">Start a fresh session</div>
+            </div>
+            <app-icon name="sparkles" [size]="14" class="text-purple-500"></app-icon>
+          </button>
+
+          <div *ngIf="aiSessions().length > 0"
+            class="px-5 mt-4 mb-1 text-[11px] font-medium text-gray-500 uppercase tracking-wider">
+            Recent sessions
+          </div>
+
+          <div *ngIf="aiSessions().length === 0"
+            class="flex flex-col items-center justify-center text-center px-5 py-12 min-h-[40vh] text-[13px] text-gray-500">
+            <app-icon name="sparkles" [size]="32" class="text-gray-300 mb-2"></app-icon>
+            No previous sessions yet.
+          </div>
+
+          <button *ngFor="let c of aiSessions()" (click)="picked.emit(c.id)" [class]="'w-full flex items-start gap-3 px-5 py-2.5 text-left hover:bg-gray-50 ' +
+              (state.activeConv() === c.id ? 'bg-blue-50/60' : '')">
+            <div
+              class="h-9 w-9 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shrink-0 shadow-sm">
+              <app-icon name="sparkles" [size]="14" class="text-white"></app-icon>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="text-[14px] font-medium text-gray-900 truncate">{{ c.name }}</span>
+                <span class="text-[11px] text-gray-500 shrink-0">{{ c.lastTime }}</span>
+              </div>
+              <div class="text-[13px] text-gray-600 truncate mt-0.5">
+                <ng-container *ngIf="c.lastSnippet; else emptyAi">{{ c.lastSnippet }}</ng-container>
+                <ng-template #emptyAi><span class="italic text-gray-400">No messages yet</span></ng-template>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <!-- Customers section -->
+        <div *ngSwitchCase="'customers'" class="flex-1 overflow-y-auto scrollable">
+          <!-- Banner -->
+          <div class="mx-3 mt-3 mb-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
+            <app-icon name="globe" [size]="14" class="text-amber-700 mt-0.5 shrink-0"></app-icon>
+            <div class="text-[12px] text-amber-900 leading-relaxed">
+              <span class="font-medium">Customer Conversations</span> — chats with people outside your organization,
+              accessed via the customer portal.
+            </div>
+          </div>
+          <!-- Filter pills -->
+          <div class="px-3 pb-2 pt-1 flex items-center gap-1.5 overflow-x-auto scrollable">
+            <button *ngFor="let f of [
+                { v: 'all', label: 'All', count: customerCounts().total },
+                { v: 'direct', label: 'Direct', count: customerCounts().direct },
+                { v: 'groups', label: 'Groups', count: customerCounts().groups }
+              ]" (click)="customerFilter.set(f.v)" [class]="filterPillClass(f.v)">
+              {{ f.label }}
+              <span
+                [class]="'text-[10px] ' + (customerFilter() === f.v ? 'text-amber-700' : 'text-gray-400')">{{ f.count }}</span>
+            </button>
+          </div>
+
+          <div *ngIf="customerVisible().length === 0"
+            class="flex flex-col items-center justify-center text-center px-5 py-12 min-h-[40vh] text-[13px] text-gray-500">
+            <app-icon name="globe" [size]="32" class="text-gray-300 mb-2"></app-icon>
+            No conversations match this filter.
+          </div>
+
+          <app-conversation-list-item *ngFor="let c of customerVisible()" [c]="c"
+            [isActive]="state.activeConv() === c.id" [expanded]="expandedSummaries().has(c.id)"
+            [customSections]="state.customSections()" (picked)="picked.emit($event)"
+            (toggleSummary)="toggleSummary($event)" (moveSection)="onMove($event)" (openInPopup)="popOut.emit($event)">
+          </app-conversation-list-item>
+        </div>
+
+        <!-- Default (built-in & custom sections) -->
+        <div *ngSwitchDefault class="flex-1 overflow-y-auto scrollable">
+          <div *ngIf="defaultVisible().length === 0"
+            class="flex flex-col items-center justify-center text-center px-5 py-12 min-h-[40vh] text-[13px] text-gray-500">
+            <app-icon [name]="emptyIcon()" [size]="32" class="text-gray-300 mb-2"></app-icon>
+            {{ emptyMsg() }}
+          </div>
+
+          <app-conversation-list-item *ngFor="let c of defaultVisible()" [c]="c"
+            [isActive]="state.activeConv() === c.id" [expanded]="expandedSummaries().has(c.id)"
+            [customSections]="state.customSections()" (picked)="picked.emit($event)"
+            (toggleSummary)="toggleSummary($event)" (moveSection)="onMove($event)" (openInPopup)="popOut.emit($event)">
+          </app-conversation-list-item>
+        </div>
+      </ng-container>
+
+      <!-- Resize handle (only when not fullWidth) -->
+      <app-resize-handle *ngIf="!fullWidth" side="right" groupName="resize" [isResizing]="state.sidebarResizing()"
+        (mouseDown)="startResize.emit($event)"></app-resize-handle>
+    </div>

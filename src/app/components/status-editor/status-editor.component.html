@@ -1,0 +1,69 @@
+    <div (click)="closed.emit()"
+      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-start justify-center pt-[10vh] sm:pt-[14vh] px-3 sm:px-4">
+      <div (click)="$event.stopPropagation()"
+        class="w-full max-w-md bg-white rounded-2xl shadow-2xl ring-1 ring-gray-200 overflow-hidden flex flex-col side-panel-in">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 class="text-[16px] font-semibold text-gray-900">Set a status</h2>
+          <button (click)="closed.emit()"
+            class="w-8 h-8 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600"
+            title="Close (Esc)">
+            <app-icon name="x" [size]="16"></app-icon>
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="px-5 py-4 space-y-4">
+          <!-- Emoji + text input -->
+          <div
+            class="flex items-center gap-2 rounded-xl ring-1 ring-gray-200 focus-within:ring-2 focus-within:ring-blue-200 focus-within:border-blue-300 px-2 py-1.5 bg-white">
+            <button (click)="cycleEmoji()"
+              class="w-10 h-10 shrink-0 flex items-center justify-center text-[22px] rounded-lg hover:bg-gray-100"
+              title="Click to cycle emoji">
+              {{ emoji() || '😀' }}
+            </button>
+            <input type="text" [ngModel]="text()" (ngModelChange)="text.set($event)" placeholder="What's your status?"
+              maxlength="100"
+              class="flex-1 bg-transparent outline-none text-[14px] text-gray-900 placeholder-gray-400" />
+            <span class="text-[10px] text-gray-400 tabular-nums shrink-0 pr-1">{{ text().length }}/100</span>
+          </div>
+
+          <!-- Preset chips -->
+          <div>
+            <div class="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Suggestions</div>
+            <div class="flex flex-wrap gap-1.5">
+              <button *ngFor="let p of presets" (click)="applyPreset(p)"
+                class="text-[12px] px-2.5 py-1.5 rounded-full bg-gray-50 hover:bg-gray-100 ring-1 ring-gray-200 text-gray-700 transition flex items-center gap-1.5">
+                <span>{{ p.emoji }}</span>
+                <span>{{ p.text }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Clear-after picker -->
+          <div>
+            <div class="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Clear after</div>
+            <div class="flex flex-wrap gap-1.5">
+              <button *ngFor="let opt of clearOptions" (click)="clearMins.set(opt.mins)"
+                [class]="clearChipClass(opt.mins)">
+                {{ opt.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer actions -->
+        <div class="flex items-center justify-between gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50/40">
+          <button *ngIf="state.userStatus()" (click)="clearStatus()"
+            class="text-[13px] text-red-600 hover:text-red-700 font-medium px-3 py-1.5 rounded transition">Clear
+            status</button>
+          <span *ngIf="!state.userStatus()" class="text-[12px] text-gray-500">No status set</span>
+
+          <div class="flex items-center gap-2">
+            <button (click)="closed.emit()"
+              class="text-[13px] text-gray-700 hover:bg-gray-100 px-3 py-1.5 rounded transition">Cancel</button>
+            <button (click)="save()" [disabled]="!canSave()" [class]="saveBtnClass()">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>

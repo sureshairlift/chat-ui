@@ -1,0 +1,77 @@
+    <div [class]="rootClass()" [style.width]="popupWidth()" [style.height]="popupHeight()">
+      <!-- ============== Header (compact, matches Google Chat) ============== -->
+      <div (click)="onHeaderClick()"
+        class="flex items-center gap-2 px-3 py-2.5 bg-white cursor-pointer select-none rounded-t-xl">
+        <app-avatar [user]="conv" [size]="24"></app-avatar>
+        <div class="flex-1 min-w-0">
+          <div class="text-[14px] font-medium text-gray-900 truncate">{{ conv?.name }}</div>
+        </div>
+        <div class="flex items-center gap-0.5 shrink-0">
+          <!-- Minimize: long horizontal dash, matching Google Chat -->
+          <button (click)="$event.stopPropagation(); toggleMinimize()"
+            class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+            [title]="minimized ? 'Expand' : 'Minimize'">
+            <app-icon [name]="minimized ? 'chevron-up' : 'minus'" [size]="14"></app-icon>
+          </button>
+          <!-- Maximize / pop-in to main window -->
+          <button (click)="$event.stopPropagation(); maximize()"
+            class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+            title="Open in main window">
+            <app-icon name="maximize-2" [size]="13"></app-icon>
+          </button>
+          <!-- Close -->
+          <button (click)="$event.stopPropagation(); close()"
+            class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-600" title="Close">
+            <app-icon name="x" [size]="14"></app-icon>
+          </button>
+        </div>
+      </div>
+
+      <!-- ============== Body (only when expanded) ============== -->
+      <ng-container *ngIf="!minimized">
+        <!-- Sub-header — member count + history/call/more action icons (right) -->
+        <div class="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2">
+          <span class="text-[12px] text-gray-600 truncate flex-1">{{ metaLine() }}</span>
+          <button class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600"
+            title="History">
+            <app-icon name="clock" [size]="14"></app-icon>
+          </button>
+          <button class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600"
+            title="Audio call">
+            <app-icon name="headphones" [size]="14"></app-icon>
+          </button>
+          <button class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600"
+            title="More options">
+            <app-icon name="more-vertical" [size]="14"></app-icon>
+          </button>
+        </div>
+
+        <!-- Scrollable messages -->
+        <div #scroll class="flex-1 overflow-y-auto scrollable bg-white py-2 min-h-0">
+          <div *ngIf="hasMoreEarlier()" #loadEarlierSentinel class="flex items-center justify-center py-2">
+            <button (click)="loadEarlier()"
+              class="text-[11px] font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-full px-2.5 py-0.5 transition">
+              Load earlier · {{ hiddenEarlierCount() }} more
+            </button>
+          </div>
+
+          <ng-container *ngFor="let group of dayGroups()">
+            <div class="flex items-center justify-center py-2">
+              <span class="text-[10px] font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">
+                {{ group.label }}
+              </span>
+            </div>
+            <app-message-bubble *ngFor="let msg of group.messages; let i = index" [msg]="msg"
+              [prevMsg]="i > 0 ? group.messages[i - 1] : null" [convId]="convId"></app-message-bubble>
+          </ng-container>
+          <div *ngIf="messages().length === 0"
+            class="flex flex-col items-center justify-center text-center px-4 py-12 text-[12px] text-gray-500">
+            No messages yet.
+          </div>
+        </div>
+
+        <!-- Composer -->
+        <app-composer [convId]="convId" [isAI]="!!conv?.isAI" [isMobile]="false" [draft]="draft()"
+          (send)="onSend($event)" (draftChange)="onDraftChange($event)"></app-composer>
+      </ng-container>
+    </div>

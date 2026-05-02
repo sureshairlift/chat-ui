@@ -1,0 +1,254 @@
+    <div class="h-screen w-full flex bg-white overflow-hidden text-gray-900"
+      style="font-family: 'DM Sans', 'Public Sans', system-ui, -apple-system, sans-serif;">
+
+      <!-- ============== Mobile drawer overlay ============== -->
+      <ng-container *ngIf="bp.isMobile() && drawerOpen()">
+        <div (click)="drawerOpen.set(false)" class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"></div>
+        <div class="fixed left-0 top-0 bottom-0 right-0 z-50 w-full bg-white shadow-2xl flex flex-col side-panel-in">
+          <div class="flex items-center justify-between px-3 py-3 border-b border-gray-100">
+            <h2 class="text-[16px] font-semibold">Menu</h2>
+            <button (click)="drawerOpen.set(false)" class="p-1.5 rounded-full hover:bg-gray-100 text-gray-600">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto" (click)="drawerOpen.set(false)">
+            <app-sidebar></app-sidebar>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- ============== Sidebar (tablet/desktop, not mobile) ==============
+           On tablet, force the icon-rail regardless of the user's collapse
+           preference — there isn't enough horizontal room for the full 260px
+           sidebar AND the conv list AND the message pane. -->
+      <ng-container *ngIf="!bp.isMobile() && !state.sidebarFullScreen()">
+        <app-collapsed-sidebar *ngIf="effectiveSidebarCollapsed()"></app-collapsed-sidebar>
+        <app-sidebar *ngIf="!effectiveSidebarCollapsed()"></app-sidebar>
+      </ng-container>
+
+      <!-- ============== Content list pane ==============
+           On mobile: hidden if a conversation is active (right pane takes over). -->
+      <ng-container *ngIf="showListPane()">
+        <ng-container [ngSwitch]="state.view()">
+          <!-- Home list (resizable on desktop, fullWidth on mobile) -->
+          <app-home-list *ngSwitchCase="'home'" [width]="state.sidebarWidth()" [fullWidth]="bp.isMobile()"
+            (picked)="state.setActiveConv($event)" (startResize)="onStartListResize($event)"
+            (openDrawer)="drawerOpen.set(true)" (popOut)="state.openConvAsPopup($event)"></app-home-list>
+
+          <app-mentions-view *ngSwitchCase="'mentions'" [showBack]="bp.isMobile()"
+            (openConv)="state.setActiveConv($event)" (back)="state.setView('home')"></app-mentions-view>
+
+          <app-threads-view *ngSwitchCase="'threads'" [showBack]="bp.isMobile()"
+            (openThread)="onOpenThreadFromList($event)" (back)="state.setView('home')"></app-threads-view>
+
+          <app-sent-view *ngSwitchCase="'sent'" [showBack]="bp.isMobile()" (openConv)="state.setActiveConv($event)"
+            (back)="state.setView('home')"></app-sent-view>
+
+          <app-starred-view *ngSwitchCase="'starred'" [showBack]="bp.isMobile()"
+            (openConv)="state.setActiveConv($event)" (back)="state.setView('home')"></app-starred-view>
+
+          <app-home-dashboard *ngSwitchCase="'dashboard'" [isMobile]="bp.isMobile()" (back)="state.setView('home')"
+            (openConv)="onPickFromSearch($event)" (markConvRead)="onMarkConvRead($event)"
+            (markAllRead)="state.markAllRead()" (goToMentions)="state.setView('mentions')" (goToTasks)="onGoToTasks()"
+            (takeOver)="onTakeOverSession($event)" (continueAI)="onContinueAI($event)"
+            (resolveSession)="onResolveSession($event)" (reassign)="onReassignSession($event)"></app-home-dashboard>
+        </ng-container>
+      </ng-container>
+
+      <!-- ============== Right pane: message panel ============== -->
+      <div *ngIf="showRightPane()" #rightPane class="flex-1 flex flex-col border-l border-gray-200 min-w-0 bg-white">
+        <ng-container *ngIf="state.currentConv() as conv; else emptyState">
+          <app-conversation-header [conv]="conv" [splitPane]="true" [isMobile]="bp.isMobile()"
+            [isTablet]="bp.isTablet()" [paneWidth]="paneWidth()" [tasksActive]="state.showTasks()"
+            [pinnedActive]="state.showPinned()" [searchActive]="convSearchOpen()"
+            [sharedMediaActive]="state.showSharedMedia()" (back)="onHeaderBack()" (close)="state.setActiveConv(null)"
+            (toggleFocus)="state.sidebarCollapsed.set(!state.sidebarCollapsed())"
+            (togglePinConv)="state.togglePinConv(conv.id)" (markUnread)="markUnread(conv.id)"
+            (newAIChat)="onNewAIChat()" (openInPopup)="openInPopup()" (hideConv)="onHideConv(conv.id)"
+            (archiveConv)="onArchiveConv(conv.id)" (leaveSpace)="onLeaveSpace(conv.id)" (blockReport)="onBlockReport()"
+            (clearHistory)="onClearHistory(conv.id)" (toggleConvSearch)="toggleConvSearch()"></app-conversation-header>
+
+          <!-- In-conversation search bar — slides in below the header when active.
+               Distinct from the global Cmd+K modal: this filters the current conv only. -->
+          <div *ngIf="convSearchOpen()"
+            class="px-4 py-2 border-b border-gray-200 bg-blue-50/40 flex items-center gap-2 side-panel-in">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              class="text-gray-500 shrink-0">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <input #convSearchInput type="text" [placeholder]="'Search in ' + conv.name + '…'"
+              [value]="convSearchQuery()" (input)="convSearchQuery.set($any($event.target).value)"
+              (keydown.escape)="closeConvSearch()"
+              class="flex-1 bg-transparent border-0 outline-none text-[13px] placeholder-gray-500" />
+            <span *ngIf="convSearchQuery()" class="text-[11px] text-gray-600 tabular-nums shrink-0">
+              {{ convSearchMatchCount() }} {{ convSearchMatchCount() === 1 ? 'match' : 'matches' }}
+            </span>
+            <button (click)="closeConvSearch()" class="p-1 hover:bg-gray-200 rounded shrink-0"
+              title="Close search (Esc)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                class="text-gray-600">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Bulk-select action bar — appears once the user has entered
+               selection mode via Save / Forward / Delete in a message's
+               More menu. Only the chosen action's button shows. -->
+          <div *ngIf="state.pendingBulkAction() as action"
+            class="px-3 sm:px-4 py-2 border-b border-blue-200 bg-blue-50/70 flex flex-wrap items-center gap-x-2 gap-y-1 side-panel-in">
+            <span class="text-[12px] font-semibold text-blue-700">
+              {{ state.selectedMsgs().size }} selected
+            </span>
+            <span *ngIf="action === 'delete'" class="hidden sm:inline text-[11px] text-blue-600/80">· own messages
+              only</span>
+            <span class="hidden sm:inline text-blue-300">·</span>
+
+            <!-- Save action button -->
+            <button *ngIf="action === 'save'" (click)="onBulkSave()" [disabled]="state.selectedMsgs().size === 0"
+              [class]="bulkBtnClass(false)">
+              Save
+            </button>
+            <!-- Forward action button -->
+            <button *ngIf="action === 'forward'" (click)="onBulkForward()" [disabled]="state.selectedMsgs().size === 0"
+              [class]="bulkBtnClass(false)">
+              Forward
+            </button>
+            <!-- Delete action button (red) -->
+            <button *ngIf="action === 'delete'" (click)="onBulkDelete()" [disabled]="state.selectedMsgs().size === 0"
+              [class]="bulkBtnClass(true)">
+              Delete
+            </button>
+
+            <button (click)="state.clearSelection()"
+              class="text-[12px] text-gray-600 hover:bg-white px-2 py-1 rounded transition ml-auto">
+              Cancel
+            </button>
+          </div>
+
+          <div #messagesScroll (scroll)="onMessagesScroll()"
+            class="flex-1 overflow-y-auto scrollable bg-white py-2 relative">
+            <!-- AI catch-me-up banner: shows for unread convs that have an
+                 AI summary prepared, dismissible per session. -->
+            <app-ai-catchup-banner [convId]="conv.id"></app-ai-catchup-banner>
+
+            <!-- Load-earlier sentinel — visible when there are messages
+                 outside the current render window. The IntersectionObserver
+                 fires loadEarlier() automatically when this scrolls near the
+                 top, and the button gives users an explicit way to trigger
+                 it on devices without smooth scroll. -->
+            <div *ngIf="hasMoreEarlier()" #loadEarlierSentinel class="flex items-center justify-center py-2">
+              <button (click)="loadEarlier()"
+                class="text-[12px] font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-full px-3 py-1 transition">
+                Load earlier · {{ hiddenEarlierCount() }} more
+              </button>
+            </div>
+
+            <ng-container *ngFor="let group of dayGroups()">
+              <div class="flex items-center justify-center py-3">
+                <div class="text-[11px] font-medium text-gray-500 bg-gray-100 rounded-full px-3 py-0.5">
+                  {{ group.label }}
+                </div>
+              </div>
+              <ng-container *ngFor="let msg of group.messages; let i = index">
+                <!-- "New" unread divider — rendered just before the first unread message -->
+                <div *ngIf="conv.unreadStartMsgId && conv.unreadStartMsgId === msg.id"
+                  class="flex items-center gap-3 px-6 my-2 select-none">
+                  <div class="flex-1 h-px bg-red-300"></div>
+                  <span class="text-[11px] font-semibold text-red-600 uppercase tracking-wider">New</span>
+                  <div class="flex-1 h-px bg-red-300"></div>
+                </div>
+                <div [attr.data-msg-id]="msg.id">
+                  <app-message-bubble [msg]="msg" [prevMsg]="i > 0 ? group.messages[i - 1] : null" [convId]="conv.id"
+                    [highlight]="focusedMsgId() === msg.id" [highlightQuery]="!!convSearchQuery()"
+                    (openThread)="state.openThread($event)" (reply)="onReply($event)"></app-message-bubble>
+                </div>
+              </ng-container>
+            </ng-container>
+
+            <!-- Scroll-to-bottom floating button — appears when scrolled up -->
+            <button *ngIf="!isAtBottom()" (click)="scrollToBottom()" title="Scroll to latest"
+              class="sticky bottom-4 ml-auto mr-4 mt-2 flex items-center justify-center w-9 h-9 rounded-full bg-white border border-gray-200 shadow-md hover:bg-gray-50 text-gray-700 transition z-10"
+              style="float: right;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 5v14M19 12l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
+
+          <app-composer [convId]="conv.id" [isAI]="!!conv.isAI" [isMobile]="bp.isMobile()"
+            [lastMessageFromOther]="lastMessageFromOther()" [replyingTo]="replyingTo()"
+            [draft]="state.drafts()[conv.id]?.html || ''" (send)="onSend($event)"
+            (cancelReply)="state.setReplyingTo(null, null)" (draftChange)="onDraftChange($event)"></app-composer>
+        </ng-container>
+        <ng-template #emptyState>
+          <!-- When no conversation is selected, the right pane shows the operations
+               dashboard (handoffs, AI insights, tasks) instead of an empty illustration. -->
+          <app-home-dashboard [isMobile]="bp.isMobile()" (back)="state.setView('home')"
+            (openConv)="onPickFromSearch($event)" (markConvRead)="onMarkConvRead($event)"
+            (markAllRead)="state.markAllRead()" (goToMentions)="state.setView('mentions')" (goToTasks)="onGoToTasks()"
+            (takeOver)="onTakeOverSession($event)" (continueAI)="onContinueAI($event)"
+            (resolveSession)="onResolveSession($event)" (reassign)="onReassignSession($event)"></app-home-dashboard>
+        </ng-template>
+      </div>
+
+      <!-- ============== Side panels (only when a conv is active) ============== -->
+      <ng-container *ngIf="state.currentConv() as conv">
+        <app-thread-panel *ngIf="threadParent() as parent" [parent]="parent" [width]="state.threadWidth()"
+          [fullscreen]="state.sidePanelFullscreen() || bp.isMobile()" (closed)="state.closeThread()"
+          (startResize)="onStartThreadResize($event)"></app-thread-panel>
+
+        <app-board-panel *ngIf="state.showBoard()" [fullscreen]="state.sidePanelFullscreen() || bp.isMobile()"
+          (closed)="state.closeBoard()"></app-board-panel>
+
+        <app-following-panel *ngIf="state.showFollowing()" [fullscreen]="state.sidePanelFullscreen() || bp.isMobile()"
+          (closed)="state.closeFollowing()" (openThread)="onOpenThreadFromList($event)"></app-following-panel>
+
+        <app-tasks-panel *ngIf="state.showTasks()" [conv]="conv"
+          [fullscreen]="state.sidePanelFullscreen() || bp.isMobile()" (closed)="state.closeTasks()"></app-tasks-panel>
+
+        <app-pinned-panel *ngIf="state.showPinned()" [conv]="conv"
+          [fullscreen]="state.sidePanelFullscreen() || bp.isMobile()" (closed)="state.closePinned()"></app-pinned-panel>
+
+        <app-shared-media-panel *ngIf="state.showSharedMedia()" [conv]="conv"
+          [fullscreen]="state.sidePanelFullscreen() || bp.isMobile()" (closed)="state.closeSharedMedia()">
+        </app-shared-media-panel>
+      </ng-container>
+
+      <!-- Search modal -->
+      <app-search-modal *ngIf="state.showSearch()" (closed)="state.closeSearch()"
+        (pickConvId)="onPickFromSearch($event)" (pickMessage)="onPickMessageFromSearch($event)"></app-search-modal>
+
+      <!-- Custom-status editor modal — emoji + text + auto-clear duration -->
+      <app-status-editor *ngIf="state.showStatusEditor()" (closed)="state.closeStatusEditor()"></app-status-editor>
+
+      <!-- File preview overlay — fullscreen Google Chat-style lightbox.
+           Listens to FilePreviewService; renders nothing when nothing is
+           being previewed. Mounted once at root so any attachment click
+           anywhere in the app routes through it. -->
+      <app-file-preview-overlay></app-file-preview-overlay>
+
+      <!-- Floating conv popups (Gmail/GChat-style). Stack horizontally
+           from the bottom-right on desktop; on mobile they fill the viewport
+           width with a small 8px gutter so the popup doesn't overflow. -->
+      <div *ngIf="state.popupConvs().length > 0" [class]="popupStackClass()">
+        <app-conv-popup *ngFor="let p of state.popupConvs(); trackBy: trackPopup" [convId]="p.convId"
+          [minimized]="p.minimized"></app-conv-popup>
+      </div>
+
+      <!-- Toast -->
+      <div *ngIf="toast.toast() as t"
+        class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] bg-gray-900 text-white text-[13px] px-4 py-2 rounded-full shadow-lg side-panel-in">
+        {{ t.message }}
+      </div>
+
+      <!-- Router outlet — invisible. The router exists purely to keep the URL
+           in sync with state for deep-linking and bookmarks. The visible UI
+           is rendered by everything above; route components are empty stubs. -->
+      <router-outlet style="display: none"></router-outlet>
+    </div>

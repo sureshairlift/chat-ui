@@ -1,0 +1,110 @@
+    <div class="flex-1 flex flex-col bg-white h-full w-full min-h-0">
+      <!-- ============== Header ============== -->
+      <div class="px-4 sm:px-6 pt-5 pb-3 border-b border-gray-100">
+        <div class="flex items-start gap-2">
+          <button *ngIf="showBack" (click)="back.emit()" class="p-1.5 -ml-1 rounded-full hover:bg-gray-100 shrink-0"
+            title="Back">
+            <app-icon name="arrow-left" [size]="20" class="text-gray-700"></app-icon>
+          </button>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-baseline gap-2 flex-wrap">
+              <h1 class="text-[22px] font-normal text-gray-900">Threads</h1>
+              <span *ngIf="unreadTotal() > 0"
+                class="text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                {{ unreadTotal() }} new
+              </span>
+            </div>
+            <p class="text-[12px] text-gray-500 mt-0.5">
+              {{ items().length === 0
+                ? 'Threads you reply to or are mentioned in will appear here'
+                : items().length + ' thread' + (items().length === 1 ? '' : 's') + " you're following" }}
+            </p>
+          </div>
+          <button *ngIf="unreadTotal() > 0" (click)="markAllRead()"
+            class="hidden sm:inline-flex items-center gap-1 text-[12px] text-gray-500 hover:text-gray-900 font-medium px-2 py-1 rounded transition shrink-0"
+            title="Mark all threads as read">
+            <app-icon name="check-circle" [size]="12"></app-icon>
+            Mark all read
+          </button>
+        </div>
+
+        <!-- Filter pills -->
+        <div *ngIf="items().length > 0" class="flex items-center gap-1.5 mt-3 overflow-x-auto scrollable">
+          <button *ngFor="let f of FILTERS" (click)="filter.set(f.v)" [class]="filterClass(f.v)">
+            {{ f.label }}
+            <span *ngIf="counts()[f.v] > 0"
+              [class]="'ml-1.5 ' + (filter() === f.v ? 'text-blue-100' : 'text-gray-500')">
+              {{ counts()[f.v] }}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ============== List ============== -->
+      <div *ngIf="filtered().length === 0; else listTpl"
+        class="flex-1 flex flex-col items-center justify-center text-center px-6 text-gray-500">
+        <app-icon name="message-circle-more" [size]="40" class="text-gray-300 mb-2"></app-icon>
+        <h3 class="text-[15px] font-medium text-gray-700">
+          {{ items().length === 0 ? 'No threads yet' : 'Nothing matches this filter' }}
+        </h3>
+        <p class="text-[13px] text-gray-500 mt-1 max-w-xs">
+          {{ items().length === 0
+            ? "When you reply to a message or someone @mentions you in a thread, it'll show up here."
+            : 'Switch back to All to see every thread you\\'re following.' }}
+        </p>
+      </div>
+
+      <ng-template #listTpl>
+        <div class="flex-1 overflow-y-auto scrollable divide-y divide-gray-50">
+          <div *ngFor="let it of filtered(); trackBy: trackByThread" class="group/threadrow relative">
+            <button (click)="openThread.emit({ msgId: it.parentMsgId, convId: it.convId })" [class]="'block w-full text-left px-4 sm:px-5 py-4 hover:bg-gray-50 transition ' +
+                (it.isUnread ? 'bg-blue-50/30' : '')">
+              <div class="flex items-start gap-3">
+                <app-avatar [user]="it.parentSender" [size]="36"></app-avatar>
+                <div class="flex-1 min-w-0">
+                  <!-- Parent header -->
+                  <div class="flex items-baseline gap-2 flex-wrap">
+                    <span class="text-[14px] font-semibold text-gray-900 truncate">{{ it.parentSender.name }}</span>
+                    <span *ngIf="it.conv" class="text-[12px] text-gray-500 truncate">in {{ it.conv.name }}</span>
+                    <span
+                      [class]="'ml-auto text-[11px] font-semibold px-1.5 py-0.5 rounded shrink-0 ' + reasonClass(it.reasonLabel)">
+                      {{ it.reasonLabel }}
+                    </span>
+                    <span *ngIf="it.isUnread" class="h-2 w-2 rounded-full bg-blue-500 shrink-0"></span>
+                  </div>
+                  <div class="text-[13px] text-gray-700 mt-1 line-clamp-2 break-words">
+                    {{ it.parentExcerpt }}
+                  </div>
+                  <!-- Last reply summary -->
+                  <div class="flex items-start gap-2 mt-2 pl-3 border-l-2 border-gray-200">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-baseline gap-1.5 flex-wrap">
+                        <app-icon name="message-circle-more" [size]="11" class="text-blue-600 shrink-0 self-center">
+                        </app-icon>
+                        <span [class]="'text-[12px] font-medium ' + (it.isUnread ? 'text-blue-700' : 'text-gray-700')">
+                          {{ it.unreadCount > 0
+                            ? it.unreadCount + ' new ' + (it.replyCount === 1 ? 'reply' : 'replies')
+                            : it.replyCount + ' ' + (it.replyCount === 1 ? 'reply' : 'replies') }}
+                        </span>
+                        <span class="text-[11px] text-gray-500">· last by {{ it.lastReplier.name }}</span>
+                        <span class="text-[11px] text-gray-400 ml-auto shrink-0">{{ it.lastReplyTime }}</span>
+                      </div>
+                      <div *ngIf="it.lastReplyExcerpt"
+                        class="text-[12px] text-gray-600 mt-0.5 line-clamp-1 break-words">
+                        {{ it.lastReplyExcerpt }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </button>
+            <!-- Hover unfollow button -->
+            <button (click)="$event.stopPropagation(); unfollow(it.key)"
+              class="absolute top-3 right-3 opacity-0 group-hover/threadrow:opacity-100 text-[11px] text-gray-500 hover:text-gray-900 hover:bg-white px-2 py-1 rounded ring-1 ring-gray-200 transition"
+              title="Unfollow this thread">
+              Unfollow
+            </button>
+          </div>
+        </div>
+      </ng-template>
+    </div>

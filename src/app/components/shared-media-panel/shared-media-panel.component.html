@@ -1,0 +1,87 @@
+    <aside [class]="asideClass" [style.width.px]="fullscreen ? null : 380">
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+        <div class="flex items-center gap-2 min-w-0">
+          <app-icon name="folder-open" [size]="16" class="text-gray-600 shrink-0"></app-icon>
+          <h3 class="text-[16px] font-medium text-gray-900 truncate">Shared files & media</h3>
+          <span class="text-[12px] text-gray-500 shrink-0">· {{ all().length }}</span>
+        </div>
+        <button (click)="handleClose()" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-600 shrink-0"
+          title="Close">
+          <app-icon name="x" [size]="16"></app-icon>
+        </button>
+      </div>
+
+      <!-- Tab strip -->
+      <div class="flex items-center gap-0 border-b border-gray-100 px-2 shrink-0 overflow-x-auto scrollable">
+        <button *ngFor="let t of tabs()" (click)="tab.set(t.key)" [class]="tabClass(t.key)">
+          {{ t.label }}
+          <span *ngIf="t.count > 0" class="ml-1.5 text-[11px] text-gray-500">{{ t.count }}</span>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="flex-1 overflow-y-auto scrollable p-3">
+        <ng-container *ngIf="filtered().length === 0; else hasItems">
+          <div class="flex flex-col items-center justify-center text-center py-16 px-6 text-gray-500">
+            <app-icon name="folder-open" [size]="32" class="mb-2 text-gray-300"></app-icon>
+            <div class="text-[13px] font-medium text-gray-700">{{ emptyText() }}</div>
+            <div class="text-[12px] text-gray-500 mt-1 max-w-[260px]">
+              Files and media shared in this conversation will appear here.
+            </div>
+          </div>
+        </ng-container>
+
+        <ng-template #hasItems>
+          <!-- Images: 2-col grid -->
+          <div *ngIf="tab() === 'images'" class="grid grid-cols-2 gap-2">
+            <button *ngFor="let att of filtered()" (click)="onPreview(att)"
+              class="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group hover:ring-2 hover:ring-blue-300 transition"
+              [style.background]="att.preview || 'linear-gradient(135deg, #93c5fd 0%, #c4b5fd 50%, #f9a8d4 100%)'"
+              style="background-size: cover; background-position: center;" [title]="att.name">
+              <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition"></div>
+              <div
+                class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5 text-white text-[10px] truncate">
+                {{ att.name }}
+              </div>
+            </button>
+          </div>
+
+          <!-- All / Files / Media: list -->
+          <div *ngIf="tab() !== 'images'" class="flex flex-col gap-1.5">
+            <button *ngFor="let att of filtered()" (click)="onPreview(att)"
+              class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 text-left transition group">
+              <!-- Icon based on type -->
+              <ng-container [ngSwitch]="att.type">
+                <div *ngSwitchCase="'image'"
+                  class="w-10 h-10 shrink-0 rounded-md overflow-hidden border border-gray-200"
+                  [style.background]="att.preview || 'linear-gradient(135deg, #93c5fd, #f9a8d4)'"
+                  style="background-size: cover;">
+                </div>
+                <div *ngSwitchCase="'video'" class="w-10 h-10 shrink-0 rounded-md flex items-center justify-center"
+                  [style.background]="att.preview || 'linear-gradient(135deg, #1e3a8a, #6366f1)'">
+                  <app-icon name="film" [size]="16" class="text-white"></app-icon>
+                </div>
+                <div *ngSwitchCase="'audio'"
+                  class="w-10 h-10 shrink-0 rounded-md bg-blue-100 flex items-center justify-center">
+                  <app-icon name="music" [size]="16" class="text-blue-700"></app-icon>
+                </div>
+                <app-file-type-icon *ngSwitchDefault [ext]="extOf(att)" [size]="36">
+                </app-file-type-icon>
+              </ng-container>
+
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-medium text-gray-900 truncate">{{ att.name }}</div>
+                <div class="text-[11px] text-gray-500 truncate">
+                  {{ senderName(att.sender) }} · {{ att.time }}<ng-container *ngIf="att.size"> · {{ att.size }}
+                  </ng-container>
+                  <ng-container *ngIf="att.duration"> · {{ att.duration }}</ng-container>
+                </div>
+              </div>
+              <app-icon name="download" [size]="14"
+                class="text-gray-400 opacity-0 group-hover:opacity-100 transition shrink-0"></app-icon>
+            </button>
+          </div>
+        </ng-template>
+      </div>
+    </aside>
