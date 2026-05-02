@@ -30,7 +30,7 @@ interface SavedRow {
   template: `
     <div class="flex-1 flex flex-col bg-white h-full w-full min-h-0">
       <!-- Header -->
-      <div class="px-6 pt-5 pb-3 border-b border-gray-100 flex items-center gap-2">
+      <div class="px-4 sm:px-6 pt-5 pb-3 border-b border-gray-100 flex items-center gap-2">
         <button
           *ngIf="showBack"
           (click)="back.emit()"
@@ -60,7 +60,7 @@ interface SavedRow {
       <ng-template #listTpl>
         <div class="flex-1 overflow-y-auto scrollable divide-y divide-gray-50">
           <div *ngFor="let r of rows(); trackBy: trackBy"
-               class="group flex items-start gap-3 px-6 py-3 hover:bg-gray-50 transition">
+               class="group flex items-start gap-3 px-4 sm:px-6 py-3 hover:bg-gray-50 transition">
             <button (click)="openConv.emit(r.conv.id)"
                     class="contents text-left">
               <app-avatar [user]="r.sender || r.conv" [size]="36"></app-avatar>

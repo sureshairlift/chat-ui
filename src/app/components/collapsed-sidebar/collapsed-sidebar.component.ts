@@ -104,8 +104,22 @@ interface CollapsedItem {
         </ng-container>
       </div>
 
-      <!-- Bottom: expand button -->
-      <div class="w-full border-t border-gray-100 p-2 flex justify-center">
+      <!-- Bottom: status emoji + expand button -->
+      <div class="w-full border-t border-gray-100 p-2 flex flex-col items-center gap-1.5">
+        <!-- Status emoji button — only the emoji shows in collapsed mode.
+             Click opens the editor; tooltip shows the full status text. -->
+        <div class="relative group">
+          <button
+            (click)="state.openStatusEditor()"
+            class="h-9 w-9 rounded-full hover:bg-gray-100 flex items-center justify-center text-[16px]"
+          >
+            {{ state.userStatus()?.emoji || '😶' }}
+          </button>
+          <ng-container *ngTemplateOutlet="tip; context: {
+            label: state.userStatus()?.text || 'Set a status',
+            info: state.userStatus() ? 'Click to update' : ''
+          }"></ng-container>
+        </div>
         <div class="relative group">
           <button
             (click)="state.sidebarCollapsed.set(false)"

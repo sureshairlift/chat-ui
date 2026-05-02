@@ -1,0 +1,552 @@
+import {
+  ChangeDetectionStrategy, Component, HostListener, computed, inject,
+} from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { FilePreviewService } from "../../services/file-preview.service";
+import { synthesizeFileContent, PreviewContent } from "../../services/synth-file-content";
+import { ToastService } from "../../services/toast.service";
+import { Attachment } from "../../models/types";
+import { FILE_TYPE_INFO } from "../../data/file-type-info";
+import { IconComponent } from "../icon/icon.component";
+import { FileTypeIconComponent } from "../file-type-icon/file-type-icon.component";
+
+/**
+ * Google Chat–style fullscreen file preview overlay.
+ *
+ * Mounted once at AppComponent root. Listens to FilePreviewService and
+ * shows nothing until something is being previewed. Renderers per type:
+ *   - image  → real <img-style> div using the attachment's preview gradient
+ *   - video  → mock player UI (the seed data has no real video URLs)
+ *   - audio  → mock waveform + transport
+ *   - text/code/markdown/json/csv/yaml → synthesized realistic content
+ *   - doc/pdf/slides → styled mock pages
+ *   - archive → file listing
+ *   - binary → "Preview not available" with download CTA
+ *
+ * Sibling navigation: prev/next chevrons cycle through every attachment
+ * in the list passed by the caller (typically all attachments on a single
+ * message), matching Google Chat's lightbox behavior.
+ */
+@Component({
+  selector: "app-file-preview-overlay",
+  standalone: true,
+  imports: [CommonModule, IconComponent, FileTypeIconComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div *ngIf="att() as a"
+         class="fixed inset-0 z-[80] bg-black/85 backdrop-blur-sm flex flex-col text-white side-panel-in"
+         (click)="onBackdropClick($event)">
+
+      <!-- ============================ Header ============================ -->
+      <div class="flex items-center gap-3 px-3 sm:px-5 py-2.5 border-b border-white/10 shrink-0"
+           (click)="$event.stopPropagation()">
+        <!-- File-type swatch -->
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center text-[10px] font-bold tracking-wider shrink-0"
+             [style.background]="swatchBg(a)">
+          {{ swatchLabel(a) }}
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-[14px] font-medium truncate">{{ a.name || 'Untitled' }}</div>
+          <div class="text-[11px] text-white/60 flex items-center gap-1.5">
+            <span class="uppercase">{{ extOf(a) || a.type }}</span>
+            <ng-container *ngIf="a.size">
+              <span class="text-white/30">·</span>
+              <span>{{ a.size }}</span>
+            </ng-container>
+            <ng-container *ngIf="hasMultiple()">
+              <span class="text-white/30">·</span>
+              <span>{{ position() }}</span>
+            </ng-container>
+          </div>
+        </div>
+
+        <!-- Header actions -->
+        <button (click)="copyContent(a)"
+                *ngIf="canCopy()"
+                class="hidden sm:flex w-9 h-9 items-center justify-center rounded-full hover:bg-white/10 transition"
+                title="Copy contents">
+          <app-icon name="copy" [size]="16"></app-icon>
+        </button>
+        <button (click)="download(a)"
+                class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 transition"
+                title="Download">
+          <app-icon name="download" [size]="16"></app-icon>
+        </button>
+        <button (click)="svc.close()"
+                class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 transition"
+                title="Close (Esc)">
+          <app-icon name="x" [size]="18"></app-icon>
+        </button>
+      </div>
+
+      <!-- ============================ Body ============================ -->
+      <div class="flex-1 min-h-0 flex items-stretch relative"
+           (click)="$event.stopPropagation()">
+
+        <!-- Prev nav (chevron, hover, hidden when at start or single item) -->
+        <button *ngIf="svc.canPrev()"
+                (click)="svc.prev()"
+                class="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition"
+                title="Previous (←)">
+          <app-icon name="chevron-left" [size]="22"></app-icon>
+        </button>
+        <button *ngIf="svc.canNext()"
+                (click)="svc.next()"
+                class="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition"
+                title="Next (→)">
+          <app-icon name="chevron-right" [size]="22"></app-icon>
+        </button>
+
+        <div class="flex-1 overflow-auto scrollable px-4 py-6 sm:px-8">
+
+          <!-- ============================ IMAGE ============================ -->
+          <div *ngIf="a.type === 'image'"
+               class="h-full w-full flex items-center justify-center">
+            <div class="rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden bg-white max-w-full"
+                 [style.aspectRatio]="a.aspectRatio || '16 / 10'"
+                 [style.background]="a.preview || 'linear-gradient(135deg, #93c5fd 0%, #c4b5fd 50%, #f9a8d4 100%)'"
+                 style="background-size: cover; background-position: center; width: min(900px, 100%);">
+              <div *ngIf="!a.preview"
+                   class="h-full flex items-center justify-center text-white/80">
+                <app-icon name="image" [size]="64" [strokeWidth]="1.25"></app-icon>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================ VIDEO ============================ -->
+          <div *ngIf="a.type === 'video'"
+               class="h-full w-full flex items-center justify-center">
+            <div class="relative rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden bg-black"
+                 style="width: min(960px, 100%); aspect-ratio: 16 / 9;"
+                 [style.background]="a.preview || 'linear-gradient(135deg, #1f2937 0%, #4b5563 100%)'">
+              <div class="absolute inset-0 flex items-center justify-center">
+                <div class="w-20 h-20 rounded-full bg-white/95 flex items-center justify-center shadow-2xl">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" class="text-gray-900 ml-1">
+                    <polygon points="5,3 19,12 5,21"></polygon>
+                  </svg>
+                </div>
+              </div>
+              <!-- Mock controls bar -->
+              <div class="absolute bottom-0 left-0 right-0 px-4 py-3 bg-gradient-to-t from-black/80 to-transparent flex items-center gap-3 text-[12px]">
+                <span>0:00</span>
+                <div class="flex-1 h-1 rounded-full bg-white/30 overflow-hidden">
+                  <div class="h-full w-[18%] bg-red-500 rounded-full"></div>
+                </div>
+                <span *ngIf="a.duration">{{ a.duration }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================ AUDIO ============================ -->
+          <div *ngIf="a.type === 'audio'"
+               class="h-full flex items-center justify-center">
+            <div class="bg-white text-gray-900 rounded-2xl shadow-2xl p-6 w-full max-w-xl">
+              <div class="flex items-center gap-3 mb-4">
+                <div class="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-white">
+                  <app-icon name="music" [size]="22"></app-icon>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-[15px] font-semibold truncate">{{ a.name || 'Voice message' }}</div>
+                  <div class="text-[12px] text-gray-500">{{ a.duration || '0:00' }}</div>
+                </div>
+              </div>
+              <!-- Waveform mock -->
+              <div class="flex items-center gap-0.5 h-12 mt-2">
+                <div *ngFor="let h of WAVE; let i = index"
+                     class="w-1 rounded-full"
+                     [style.height.px]="h"
+                     [style.background]="i < 18 ? '#2563eb' : '#cbd5e1'"></div>
+              </div>
+              <div class="flex items-center gap-3 mt-4">
+                <button class="w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"></polygon></svg>
+                </button>
+                <span class="text-[12px] text-gray-500 tabular-nums">0:00</span>
+                <div class="flex-1 h-1 rounded-full bg-gray-200">
+                  <div class="h-full w-[36%] rounded-full bg-blue-600"></div>
+                </div>
+                <span class="text-[12px] text-gray-500 tabular-nums">{{ a.duration || '0:00' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================ FILE-type bodies ============================ -->
+          <ng-container *ngIf="a.type === 'file'">
+            <ng-container [ngSwitch]="content().kind">
+
+              <!-- Plain text -->
+              <pre *ngSwitchCase="'text'"
+                   class="bg-white text-gray-800 rounded-lg shadow-2xl p-6 max-w-3xl mx-auto whitespace-pre-wrap break-words text-[13px] leading-6 font-mono"
+              >{{ content().body }}</pre>
+
+              <!-- Source code -->
+              <div *ngSwitchCase="'code'"
+                   class="bg-[#0d1117] text-[#e6edf3] rounded-lg shadow-2xl max-w-4xl mx-auto overflow-hidden ring-1 ring-white/10">
+                <div class="px-4 py-2 border-b border-white/5 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/60">
+                  <app-icon name="code" [size]="13"></app-icon>
+                  {{ content().language }}
+                </div>
+                <pre class="px-4 py-4 overflow-auto scrollable text-[13px] leading-6 font-mono">{{ content().body }}</pre>
+              </div>
+
+              <!-- JSON -->
+              <pre *ngSwitchCase="'json'"
+                   class="bg-[#0d1117] text-[#e6edf3] rounded-lg shadow-2xl p-6 max-w-3xl mx-auto overflow-auto scrollable text-[13px] leading-6 font-mono ring-1 ring-white/10"
+              >{{ content().body }}</pre>
+
+              <!-- Markdown — render headings/lists/etc. with simple inline formatting -->
+              <div *ngSwitchCase="'markdown'"
+                   class="bg-white text-gray-800 rounded-lg shadow-2xl p-8 max-w-3xl mx-auto prose-airlift">
+                <ng-container *ngFor="let block of mdBlocks()">
+                  <h1 *ngIf="block.kind === 'h1'" class="text-[22px] font-semibold mt-1 mb-3 text-gray-900">{{ block.text }}</h1>
+                  <h2 *ngIf="block.kind === 'h2'" class="text-[17px] font-semibold mt-5 mb-2 text-gray-900">{{ block.text }}</h2>
+                  <p *ngIf="block.kind === 'p'" class="text-[14px] leading-7 mb-3">{{ block.text }}</p>
+                  <blockquote *ngIf="block.kind === 'quote'"
+                              class="border-l-4 border-blue-300 bg-blue-50/40 px-4 py-2 my-3 text-[13px] italic text-gray-700">
+                    {{ block.text }}
+                  </blockquote>
+                  <ul *ngIf="block.kind === 'ul'" class="list-disc pl-6 my-3 space-y-1 text-[14px]">
+                    <li *ngFor="let it of block.items">{{ it }}</li>
+                  </ul>
+                  <ol *ngIf="block.kind === 'ol'" class="list-decimal pl-6 my-3 space-y-1 text-[14px]">
+                    <li *ngFor="let it of block.items">{{ it }}</li>
+                  </ol>
+                </ng-container>
+              </div>
+
+              <!-- CSV / spreadsheet — table render -->
+              <div *ngSwitchCase="'csv'" class="bg-white text-gray-800 rounded-lg shadow-2xl max-w-5xl mx-auto overflow-hidden">
+                <ng-container *ngTemplateOutlet="tableTpl; context: { $implicit: content().rows, sheet: 'Sheet 1' }"></ng-container>
+              </div>
+              <div *ngSwitchCase="'table'" class="bg-white text-gray-800 rounded-lg shadow-2xl max-w-5xl mx-auto overflow-hidden">
+                <ng-container *ngTemplateOutlet="tableTpl; context: { $implicit: content().rows, sheet: 'Sheet 1' }"></ng-container>
+              </div>
+
+              <!-- Word / Pages -->
+              <div *ngSwitchCase="'doc'"
+                   class="space-y-6 max-w-3xl mx-auto">
+                <ng-container *ngFor="let para of content().pages![0]; let pi = index">
+                  <ng-container *ngTemplateOutlet="docPara; context: { $implicit: para, first: pi === 0 }"></ng-container>
+                </ng-container>
+              </div>
+
+              <!-- PDF — multi page -->
+              <div *ngSwitchCase="'pdf'"
+                   class="space-y-6 max-w-3xl mx-auto">
+                <div *ngFor="let page of content().pages!; let pi = index"
+                     class="bg-white text-gray-800 rounded-md shadow-2xl p-10 relative"
+                     style="aspect-ratio: 8.5 / 11;">
+                  <ng-container *ngFor="let para of page; let i = index">
+                    <ng-container *ngTemplateOutlet="docPara; context: { $implicit: para, first: i === 0 }"></ng-container>
+                  </ng-container>
+                  <div class="absolute bottom-3 right-4 text-[10px] text-gray-400">
+                    Page {{ pi + 1 }} of {{ content().pages!.length }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- PowerPoint / Keynote -->
+              <div *ngSwitchCase="'slides'"
+                   class="space-y-6 max-w-4xl mx-auto">
+                <div *ngFor="let slide of content().pages!; let si = index"
+                     class="rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden"
+                     [style.background]="slideBg(si)"
+                     style="aspect-ratio: 16 / 9;">
+                  <div class="h-full w-full flex flex-col justify-center p-10 text-white">
+                    <ng-container *ngFor="let line of slide; let li = index">
+                      <h2 *ngIf="li === 0 && line.startsWith('__TITLE__')"
+                          class="text-[28px] font-semibold mb-4">
+                        {{ line.replace('__TITLE__', '') }}
+                      </h2>
+                      <h2 *ngIf="li === 0 && !line.startsWith('__TITLE__')"
+                          class="text-[28px] font-semibold mb-4">
+                        {{ line }}
+                      </h2>
+                      <div *ngIf="li > 0"
+                           class="text-[16px] opacity-90 leading-7">
+                        {{ line }}
+                      </div>
+                    </ng-container>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Archive listing -->
+              <div *ngSwitchCase="'archive'"
+                   class="bg-white text-gray-800 rounded-lg shadow-2xl max-w-2xl mx-auto overflow-hidden">
+                <div class="px-4 py-3 border-b border-gray-100 text-[12px] uppercase tracking-wider text-gray-500 flex items-center gap-2">
+                  <app-icon name="folder-open" [size]="14"></app-icon>
+                  Archive contents · {{ content().entries!.length }} files
+                </div>
+                <div class="divide-y divide-gray-50">
+                  <div *ngFor="let entry of content().entries!"
+                       class="flex items-center gap-3 px-4 py-2 text-[13px]">
+                    <app-file-type-icon [ext]="entryExt(entry.name)" [size]="22"></app-file-type-icon>
+                    <span class="flex-1 min-w-0 truncate font-mono text-[12px]">{{ entry.name }}</span>
+                    <span class="text-[11px] text-gray-500 tabular-nums">{{ entry.size }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Binary fallback -->
+              <div *ngSwitchCase="'binary'"
+                   class="h-full flex flex-col items-center justify-center text-center text-white/80">
+                <app-file-type-icon [ext]="extOf(a)" [size]="96"></app-file-type-icon>
+                <h3 class="text-[16px] font-medium mt-6 text-white">No inline preview available</h3>
+                <p class="text-[13px] text-white/60 mt-1.5 max-w-sm">
+                  This file type can't be previewed in the chat. Download to open it in the appropriate application.
+                </p>
+                <button (click)="download(a)"
+                        class="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white text-gray-900 hover:bg-gray-100 text-[13px] font-medium transition">
+                  <app-icon name="download" [size]="14"></app-icon>
+                  Download {{ a.name }}
+                </button>
+              </div>
+
+            </ng-container>
+          </ng-container>
+        </div>
+      </div>
+
+      <!-- Mobile prev/next bar -->
+      <div *ngIf="hasMultiple()"
+           class="sm:hidden flex items-center justify-between px-4 py-2 border-t border-white/10 shrink-0"
+           (click)="$event.stopPropagation()">
+        <button (click)="svc.prev()"
+                [disabled]="!svc.canPrev()"
+                class="flex items-center gap-1 text-[13px] disabled:opacity-30">
+          <app-icon name="chevron-left" [size]="18"></app-icon> Prev
+        </button>
+        <span class="text-[12px] text-white/60">{{ position() }}</span>
+        <button (click)="svc.next()"
+                [disabled]="!svc.canNext()"
+                class="flex items-center gap-1 text-[13px] disabled:opacity-30">
+          Next <app-icon name="chevron-right" [size]="18"></app-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- ============================ Reusable templates ============================ -->
+    <ng-template #tableTpl let-rows let-sheet="sheet">
+      <div class="px-4 py-2 border-b border-gray-100 text-[12px] uppercase tracking-wider text-gray-500 flex items-center gap-2">
+        <app-icon name="table" [size]="14"></app-icon>
+        {{ sheet }} · {{ rows.length - 1 }} rows
+      </div>
+      <div class="overflow-auto scrollable max-h-[70vh]">
+        <table class="w-full border-collapse text-[12.5px]">
+          <thead class="bg-gray-50 sticky top-0 shadow-sm">
+            <tr>
+              <th class="text-left px-3 py-2 font-medium text-gray-600 border-b border-gray-200"
+                  *ngFor="let h of rows[0]">{{ h }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of rows.slice(1); let ri = index"
+                [ngClass]="{ 'bg-gray-50/40': ri % 2 === 1 }">
+              <td *ngFor="let cell of row"
+                  class="px-3 py-1.5 border-b border-gray-100 text-gray-800 align-top">{{ cell }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </ng-template>
+
+    <ng-template #docPara let-p let-first="first">
+      <ng-container *ngIf="p.startsWith('__TITLE__'); else regular">
+        <h1 class="text-[24px] font-semibold text-gray-900 mb-4 capitalize">
+          {{ p.replace('__TITLE__', '') }}
+        </h1>
+      </ng-container>
+      <ng-template #regular>
+        <h3 *ngIf="isDocHeading(p); else docBody"
+            class="text-[16px] font-semibold text-gray-900 mt-6 mb-2">
+          {{ p }}
+        </h3>
+        <ng-template #docBody>
+          <p [class]="'text-[14px] text-gray-700 leading-7 ' + (first ? 'italic text-gray-500' : '')">
+            {{ p }}
+          </p>
+        </ng-template>
+      </ng-template>
+    </ng-template>
+  `,
+  styles: [`
+    :host { display: contents; }
+  `],
+})
+export class FilePreviewOverlayComponent {
+  svc   = inject(FilePreviewService);
+  toast = inject(ToastService);
+
+  /** Current attachment being shown (or null). */
+  att = computed<Attachment | null>(() => this.svc.active());
+
+  /** Synthesized preview content for the active file-type attachment. */
+  content = computed<PreviewContent>(() => {
+    const a = this.svc.active();
+    if (!a || a.type !== "file") return { kind: "binary" };
+    return synthesizeFileContent(a.name || "untitled", this.extOf(a));
+  });
+
+  hasMultiple = computed<boolean>(() => {
+    const c = this.svc.current();
+    return !!c && c.list.length > 1;
+  });
+
+  position = computed<string>(() => {
+    const c = this.svc.current();
+    return c ? `${c.index + 1} of ${c.list.length}` : "";
+  });
+
+  /** Markdown blocks parsed from synthesized markdown body. Tiny parser:
+   *  recognises h1/h2, blockquote (>), unordered (-), ordered (1.) lists, and
+   *  paragraph fallthrough. Doesn't attempt full markdown — just enough to
+   *  make the preview look like a rendered doc rather than raw text. */
+  mdBlocks = computed<{ kind: "h1" | "h2" | "p" | "ul" | "ol" | "quote";
+                       text?: string; items?: string[] }[]>(() => {
+    const c = this.svc.active();
+    const body = c?.type === "file" ? this.content().body ?? "" : "";
+    if (!body) return [];
+    const lines = body.split(/\r?\n/);
+    const out: { kind: "h1" | "h2" | "p" | "ul" | "ol" | "quote";
+                 text?: string; items?: string[] }[] = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (!line.trim()) { i++; continue; }
+      if (line.startsWith("# "))      { out.push({ kind: "h1", text: line.slice(2).trim() }); i++; continue; }
+      if (line.startsWith("## "))     { out.push({ kind: "h2", text: line.slice(3).trim() }); i++; continue; }
+      if (line.startsWith("> "))      { out.push({ kind: "quote", text: line.slice(2).trim() }); i++; continue; }
+      if (/^[-*]\s+/.test(line)) {
+        const items: string[] = [];
+        while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
+          items.push(lines[i].replace(/^[-*]\s+/, "")); i++;
+        }
+        out.push({ kind: "ul", items }); continue;
+      }
+      if (/^\d+\.\s+/.test(line)) {
+        const items: string[] = [];
+        while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
+          items.push(lines[i].replace(/^\d+\.\s+/, "")); i++;
+        }
+        out.push({ kind: "ol", items }); continue;
+      }
+      out.push({ kind: "p", text: line }); i++;
+    }
+    return out;
+  });
+
+  canCopy = computed<boolean>(() => {
+    const k = this.content().kind;
+    return k === "text" || k === "code" || k === "json" || k === "markdown" || k === "csv" || k === "table";
+  });
+
+  /** Pre-baked decorative gradient backgrounds for the slide mocks. */
+  private static SLIDE_BGS = [
+    "linear-gradient(135deg,#1e3a8a,#6366f1)",
+    "linear-gradient(135deg,#7c3aed,#ec4899)",
+    "linear-gradient(135deg,#0f766e,#22d3ee)",
+    "linear-gradient(135deg,#b91c1c,#f97316)",
+    "linear-gradient(135deg,#1f2937,#475569)",
+  ];
+  slideBg(i: number): string {
+    return FilePreviewOverlayComponent.SLIDE_BGS[i % FilePreviewOverlayComponent.SLIDE_BGS.length];
+  }
+
+  readonly WAVE = [
+    8, 14, 10, 18, 12, 22, 14, 26, 16, 24, 12, 20,
+    14, 22, 18, 14, 10, 16, 12, 18, 8, 14, 10, 16,
+    12, 18, 14, 22, 18, 14, 10, 6,
+  ];
+
+  /* ============================ Helpers ============================ */
+
+  extOf(a: Attachment): string {
+    return ((a.ext || a.name?.split(".").pop()) || "").toLowerCase();
+  }
+
+  swatchBg(a: Attachment): string {
+    if (a.type === "image") return "linear-gradient(135deg,#60a5fa,#a78bfa)";
+    if (a.type === "video") return "linear-gradient(135deg,#1f2937,#475569)";
+    if (a.type === "audio") return "linear-gradient(135deg,#2563eb,#7c3aed)";
+    const meta = FILE_TYPE_INFO[this.extOf(a)] || FILE_TYPE_INFO["default"];
+    return meta.color;
+  }
+
+  swatchLabel(a: Attachment): string {
+    if (a.type === "image") return "IMG";
+    if (a.type === "video") return "VID";
+    if (a.type === "audio") return "AUD";
+    const meta = FILE_TYPE_INFO[this.extOf(a)] || FILE_TYPE_INFO["default"];
+    return meta.label;
+  }
+
+  entryExt(name: string): string {
+    return (name.split(".").pop() || "").toLowerCase();
+  }
+
+  isDocHeading(p: string): boolean {
+    // Matches "1. Background", "2. Current state", etc., but not body paragraphs
+    return /^\d+\.\s+[A-Z]/.test(p) && p.length < 60;
+  }
+
+  /* ============================ Actions ============================ */
+
+  onBackdropClick(e: MouseEvent): void {
+    if (e.target === e.currentTarget) this.svc.close();
+  }
+
+  download(a: Attachment): void {
+    // The seed data has no real file URLs, so we synthesise the body for
+    // text-shaped types and trigger a download. For binary/image/video/audio
+    // we just toast — the demo doesn't ship real bytes.
+    const c = this.content();
+    if (a.type === "file" && (c.kind === "text" || c.kind === "code"
+        || c.kind === "json" || c.kind === "markdown")) {
+      const blob = new Blob([c.body || ""], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = a.name || "file.txt";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    }
+    if (a.type === "file" && (c.kind === "csv" || c.kind === "table")) {
+      const csv = (c.rows || []).map((row) =>
+        row.map((cell) => /[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell).join(",")
+      ).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = a.name || "file.csv";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    }
+    this.toast.show(`Download started · ${a.name || "file"}`);
+  }
+
+  copyContent(a: Attachment): void {
+    const c = this.content();
+    let text = "";
+    if (c.body) text = c.body;
+    else if (c.rows) text = c.rows.map((r) => r.join("\t")).join("\n");
+    if (!text) { this.toast.show("Nothing to copy"); return; }
+    navigator.clipboard?.writeText(text).then(
+      () => this.toast.show("Copied to clipboard"),
+      () => this.toast.show("Copy failed"),
+    );
+  }
+
+  /* ============================ Keyboard ============================ */
+
+  @HostListener("document:keydown", ["$event"])
+  onKey(e: KeyboardEvent): void {
+    if (!this.svc.current()) return;
+    if (e.key === "Escape")    { this.svc.close(); e.preventDefault(); return; }
+    if (e.key === "ArrowLeft") { this.svc.prev();  e.preventDefault(); return; }
+    if (e.key === "ArrowRight"){ this.svc.next();  e.preventDefault(); return; }
+  }
+}

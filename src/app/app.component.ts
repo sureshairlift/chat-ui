@@ -1,6 +1,7 @@
 import {
-  AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, HostListener,
-  OnDestroy, ViewChild, computed, effect, inject, signal,
+  AfterViewChecked, AfterViewInit, ChangeDetectionStrategy, Component,
+  ElementRef, HostListener, OnDestroy, ViewChild,
+  computed, effect, inject, signal, untracked,
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { Router, RouterOutlet, NavigationEnd, ActivatedRoute } from "@angular/router";
@@ -33,6 +34,10 @@ import { PinnedPanelComponent } from "./components/pinned-panel/pinned-panel.com
 import { SharedMediaPanelComponent } from "./components/shared-media-panel/shared-media-panel.component";
 import { SearchModalComponent } from "./components/search-modal/search-modal.component";
 import { HomeDashboardComponent } from "./components/home-dashboard/home-dashboard.component";
+import { ConvPopupComponent } from "./components/conv-popup/conv-popup.component";
+import { AICatchupBannerComponent } from "./components/ai-catchup-banner/ai-catchup-banner.component";
+import { StatusEditorComponent } from "./components/status-editor/status-editor.component";
+import { FilePreviewOverlayComponent } from "./components/file-preview-overlay/file-preview-overlay.component";
 
 interface DayGroup { key: string; label: string; messages: Message[]; }
 
@@ -70,7 +75,9 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
     ConversationHeaderComponent, MessageBubbleComponent, ComposerComponent,
     ThreadPanelComponent, BoardPanelComponent, FollowingPanelComponent,
     TasksPanelComponent, PinnedPanelComponent, SharedMediaPanelComponent,
-    SearchModalComponent, HomeDashboardComponent,
+    SearchModalComponent, HomeDashboardComponent, ConvPopupComponent,
+    AICatchupBannerComponent, StatusEditorComponent,
+    FilePreviewOverlayComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -81,7 +88,7 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
       <ng-container *ngIf="bp.isMobile() && drawerOpen()">
         <div (click)="drawerOpen.set(false)"
              class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"></div>
-        <div class="fixed left-0 top-0 bottom-0 z-50 w-[300px] bg-white shadow-2xl flex flex-col side-panel-in">
+        <div class="fixed left-0 top-0 bottom-0 right-0 z-50 w-full bg-white shadow-2xl flex flex-col side-panel-in">
           <div class="flex items-center justify-between px-3 py-3 border-b border-gray-100">
             <h2 class="text-[16px] font-semibold">Menu</h2>
             <button (click)="drawerOpen.set(false)"
@@ -118,6 +125,7 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
             (picked)="state.setActiveConv($event)"
             (startResize)="onStartListResize($event)"
             (openDrawer)="drawerOpen.set(true)"
+            (popOut)="state.openConvAsPopup($event)"
           ></app-home-list>
 
           <app-mentions-view
@@ -186,6 +194,7 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
             (togglePinConv)="state.togglePinConv(conv.id)"
             (markUnread)="markUnread(conv.id)"
             (newAIChat)="onNewAIChat()"
+            (openInPopup)="openInPopup()"
             (hideConv)="onHideConv(conv.id)"
             (archiveConv)="onArchiveConv(conv.id)"
             (leaveSpace)="onLeaveSpace(conv.id)"
@@ -222,9 +231,66 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
             </button>
           </div>
 
+          <!-- Bulk-select action bar — appears once the user has entered
+               selection mode via Save / Forward / Delete in a message's
+               More menu. Only the chosen action's button shows. -->
+          <div *ngIf="state.pendingBulkAction() as action"
+               class="px-3 sm:px-4 py-2 border-b border-blue-200 bg-blue-50/70 flex flex-wrap items-center gap-x-2 gap-y-1 side-panel-in">
+            <span class="text-[12px] font-semibold text-blue-700">
+              {{ state.selectedMsgs().size }} selected
+            </span>
+            <span *ngIf="action === 'delete'" class="hidden sm:inline text-[11px] text-blue-600/80">· own messages only</span>
+            <span class="hidden sm:inline text-blue-300">·</span>
+
+            <!-- Save action button -->
+            <button *ngIf="action === 'save'"
+                    (click)="onBulkSave()"
+                    [disabled]="state.selectedMsgs().size === 0"
+                    [class]="bulkBtnClass(false)">
+              Save
+            </button>
+            <!-- Forward action button -->
+            <button *ngIf="action === 'forward'"
+                    (click)="onBulkForward()"
+                    [disabled]="state.selectedMsgs().size === 0"
+                    [class]="bulkBtnClass(false)">
+              Forward
+            </button>
+            <!-- Delete action button (red) -->
+            <button *ngIf="action === 'delete'"
+                    (click)="onBulkDelete()"
+                    [disabled]="state.selectedMsgs().size === 0"
+                    [class]="bulkBtnClass(true)">
+              Delete
+            </button>
+
+            <button (click)="state.clearSelection()"
+                    class="text-[12px] text-gray-600 hover:bg-white px-2 py-1 rounded transition ml-auto">
+              Cancel
+            </button>
+          </div>
+
           <div #messagesScroll
                (scroll)="onMessagesScroll()"
                class="flex-1 overflow-y-auto scrollable bg-white py-2 relative">
+            <!-- AI catch-me-up banner: shows for unread convs that have an
+                 AI summary prepared, dismissible per session. -->
+            <app-ai-catchup-banner [convId]="conv.id"></app-ai-catchup-banner>
+
+            <!-- Load-earlier sentinel — visible when there are messages
+                 outside the current render window. The IntersectionObserver
+                 fires loadEarlier() automatically when this scrolls near the
+                 top, and the button gives users an explicit way to trigger
+                 it on devices without smooth scroll. -->
+            <div *ngIf="hasMoreEarlier()"
+                 #loadEarlierSentinel
+                 class="flex items-center justify-center py-2">
+              <button (click)="loadEarlier()"
+                      class="text-[12px] font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-full px-3 py-1 transition">
+                Load earlier · {{ hiddenEarlierCount() }} more
+              </button>
+            </div>
+
             <ng-container *ngFor="let group of dayGroups()">
               <div class="flex items-center justify-center py-3">
                 <div class="text-[11px] font-medium text-gray-500 bg-gray-100 rounded-full px-3 py-0.5">
@@ -347,7 +413,32 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
         *ngIf="state.showSearch()"
         (closed)="state.closeSearch()"
         (pickConvId)="onPickFromSearch($event)"
+        (pickMessage)="onPickMessageFromSearch($event)"
       ></app-search-modal>
+
+      <!-- Custom-status editor modal — emoji + text + auto-clear duration -->
+      <app-status-editor
+        *ngIf="state.showStatusEditor()"
+        (closed)="state.closeStatusEditor()"
+      ></app-status-editor>
+
+      <!-- File preview overlay — fullscreen Google Chat-style lightbox.
+           Listens to FilePreviewService; renders nothing when nothing is
+           being previewed. Mounted once at root so any attachment click
+           anywhere in the app routes through it. -->
+      <app-file-preview-overlay></app-file-preview-overlay>
+
+      <!-- Floating conv popups (Gmail/GChat-style). Stack horizontally
+           from the bottom-right on desktop; on mobile they fill the viewport
+           width with a small 8px gutter so the popup doesn't overflow. -->
+      <div *ngIf="state.popupConvs().length > 0"
+           [class]="popupStackClass()">
+        <app-conv-popup
+          *ngFor="let p of state.popupConvs(); trackBy: trackPopup"
+          [convId]="p.convId"
+          [minimized]="p.minimized"
+        ></app-conv-popup>
+      </div>
 
       <!-- Toast -->
       <div *ngIf="toast.toast() as t"
@@ -362,7 +453,7 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
     </div>
   `,
 })
-export class AppComponent implements AfterViewInit, OnDestroy {
+export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy {
   state = inject(ChatStateService);
   toast = inject(ToastService);
   bp    = inject(BreakpointService);
@@ -394,6 +485,28 @@ export class AppComponent implements AfterViewInit, OnDestroy {
    *  from Threads/Mentions/Search). Auto-clears after ~2s. */
   focusedMsgId = signal<string | null>(null);
   private focusedClearTimer?: ReturnType<typeof setTimeout>;
+
+  /** Windowed rendering — only the last N messages of the active conv are
+   *  rendered at a time. A "Load earlier" sentinel near the top expands the
+   *  window by `MSG_PAGE_SIZE`. Resets on conv switch. Cheaper than full
+   *  CDK virtual scroll, works with variable message heights, day separators,
+   *  and avatar grouping for free. */
+  private static readonly MSG_INITIAL_WINDOW = 50;
+  private static readonly MSG_PAGE_SIZE = 50;
+  msgWindowSize = signal<number>(AppComponent.MSG_INITIAL_WINDOW);
+  /** True when the user has more older messages they could load. Drives the
+   *  visibility of the "Load earlier" button + sentinel. */
+  hasMoreEarlier = computed<boolean>(() =>
+    this.state.currentMessages().length > this.msgWindowSize()
+  );
+  /** Total count of older messages currently outside the render window. */
+  hiddenEarlierCount = computed<number>(() =>
+    Math.max(0, this.state.currentMessages().length - this.msgWindowSize())
+  );
+
+  @ViewChild("loadEarlierSentinel") loadEarlierSentinel?: ElementRef<HTMLElement>;
+  private earlierObserver?: IntersectionObserver;
+  private isLoadingEarlier = false;
 
   /** In-conversation search bar (distinct from the global Cmd+K modal).
    *  When `convSearchOpen` is true, an input row appears below the conv
@@ -484,23 +597,28 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     // Close the mobile drawer whenever the user navigates from inside the
     // sidebar (picks a view, section, or conversation). Without this, the
     // drawer stays open after a tap which feels broken on mobile.
-    // `allowSignalWrites: true` because the effect's whole purpose is to
-    // reset state in response to navigation signal changes.
+    //
+    // `drawerOpen` is read via `untracked()` so it isn't a dependency of
+    // this effect — without that, clicking the menu button (which sets
+    // drawerOpen=true) would re-fire this effect and immediately set it
+    // back to false, making the drawer appear "broken" on mobile.
     effect(() => {
       this.state.view();
       this.state.activeConv();
       this.state.selectedSection();
-      if (this.bp.isMobile() && this.drawerOpen()) {
+      if (this.bp.isMobile() && untracked(() => this.drawerOpen())) {
         this.drawerOpen.set(false);
       }
     }, { allowSignalWrites: true });
 
     // Reset in-conversation search when the active conversation changes,
-    // so query state doesn't leak across conversations.
+    // so query state doesn't leak across conversations. Also reset the
+    // windowed-render size so a freshly opened conv starts at last 50.
     effect(() => {
       this.state.activeConv();
       this.convSearchOpen.set(false);
       this.convSearchQuery.set("");
+      this.msgWindowSize.set(AppComponent.MSG_INITIAL_WINDOW);
     }, { allowSignalWrites: true });
 
     /* ---------------- URL ↔ state sync ----------------
@@ -677,8 +795,52 @@ export class AppComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.resizeObserver?.disconnect();
+    this.earlierObserver?.disconnect();
     this.cleanupResize();
     if (this.focusedClearTimer) clearTimeout(this.focusedClearTimer);
+  }
+
+  /** After every change-detection cycle, ensure the IntersectionObserver is
+   *  attached to whichever "Load earlier" sentinel is currently in the DOM
+   *  (or torn down if there's nothing left to load). The sentinel comes and
+   *  goes via *ngIf, so a static ViewChild won't suffice. */
+  ngAfterViewChecked(): void {
+    const el = this.loadEarlierSentinel?.nativeElement ?? null;
+    if (el === this.observedSentinelEl) return;
+    this.earlierObserver?.disconnect();
+    this.earlierObserver = undefined;
+    this.observedSentinelEl = el;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    this.earlierObserver = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) this.loadEarlier();
+        }
+      },
+      { root: this.messagesScroll?.nativeElement ?? null, rootMargin: "200px 0px 0px 0px" },
+    );
+    this.earlierObserver.observe(el);
+  }
+  private observedSentinelEl: HTMLElement | null = null;
+
+  /** Expand the window by one page. Preserves scroll position by snapshotting
+   *  the scroll container's scrollHeight before the new messages render and
+   *  restoring after — without this, the user's viewport jumps to the top. */
+  loadEarlier(): void {
+    if (this.isLoadingEarlier) return;
+    if (!this.hasMoreEarlier()) return;
+    this.isLoadingEarlier = true;
+    const el = this.messagesScroll?.nativeElement;
+    const prevHeight = el?.scrollHeight ?? 0;
+    const prevTop    = el?.scrollTop ?? 0;
+    this.msgWindowSize.update((n) => n + AppComponent.MSG_PAGE_SIZE);
+    requestAnimationFrame(() => {
+      if (el) {
+        const delta = el.scrollHeight - prevHeight;
+        el.scrollTop = prevTop + delta;
+      }
+      this.isLoadingEarlier = false;
+    });
   }
 
   /* =================== Messages scroll wiring =================== */
@@ -703,6 +865,21 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   focusMessage(msgId: string): void {
     if (this.focusedClearTimer) clearTimeout(this.focusedClearTimer);
     this.focusedMsgId.set(msgId);
+    // If the target message is outside the current render window, expand the
+    // window so it's actually in the DOM. Without this the scrollIntoView
+    // below silently no-ops for any message older than the last 50.
+    const msgs = this.state.currentMessages();
+    const idx = msgs.findIndex((m) => m.id === msgId);
+    if (idx >= 0) {
+      const fromEnd = msgs.length - idx;
+      const win = this.msgWindowSize();
+      if (fromEnd > win) {
+        // Round up to the next page boundary so we don't repeatedly expand
+        // by tiny amounts on consecutive jumps.
+        const target = Math.ceil(fromEnd / AppComponent.MSG_PAGE_SIZE) * AppComponent.MSG_PAGE_SIZE;
+        this.msgWindowSize.set(target);
+      }
+    }
     // Wait a frame so the message-bubble exists in the DOM, then scroll.
     setTimeout(() => {
       const el = document.querySelector<HTMLElement>(`[data-msg-id="${CSS.escape(msgId)}"]`);
@@ -774,13 +951,20 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   dayGroups = computed<DayGroup[]>(() => {
     const msgs = this.state.currentMessages();
     const q = this.convSearchQuery().trim().toLowerCase();
-    const filtered = q
+    const matched = q
       ? msgs.filter((m) => {
           const haystack = (m.text || "") + " " +
             (m.html ? m.html.replace(/<[^>]+>/g, " ") : "");
           return haystack.toLowerCase().includes(q);
         })
       : msgs;
+    // Windowed render — only the most recent N items make it into the
+    // template. When searching we surface every match (search results
+    // would be confusing if older hits were silently hidden).
+    const windowSize = this.msgWindowSize();
+    const filtered = q || matched.length <= windowSize
+      ? matched
+      : matched.slice(matched.length - windowSize);
     const groups: DayGroup[] = [];
     let lastKey: string | null = null;
     for (const m of filtered) {
@@ -951,7 +1135,71 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     this.state.setActiveConv(convId);
   }
 
+  /** Picked a message search result — open the conv AND scroll/highlight
+   *  the matching message. The slight delay lets the conv pane mount and
+   *  render its messages before we ask focusMessage to find one by ID. */
+  onPickMessageFromSearch(e: { convId: string; msgId: string }): void {
+    if (this.state.view() === "dashboard") this.state.setView("home");
+    this.state.setActiveConv(e.convId);
+    setTimeout(() => this.focusMessage(e.msgId), 100);
+  }
+
   onNewAIChat(): void { this.state.setActiveConv("ai-new"); }
+
+  /* ============== Bulk message actions ============== */
+
+  onBulkDelete(): void {
+    const count = this.state.selectedMsgs().size;
+    if (!count) return;
+    if (typeof confirm === "function" && !confirm(`Delete ${count} message${count === 1 ? "" : "s"}?`)) return;
+    const n = this.state.bulkDeleteSelected();
+    if (n > 0) this.toast.show(`${n} message${n === 1 ? "" : "s"} deleted`);
+    else this.toast.show("Nothing deleted — own messages only");
+  }
+
+  onBulkSave(): void {
+    const n = this.state.bulkSaveSelected();
+    if (n > 0) this.toast.show(`${n} message${n === 1 ? "" : "s"} saved`);
+  }
+
+  onBulkForward(): void {
+    const n = this.state.bulkForwardSelected();
+    if (n > 0) this.toast.show(`${n} message${n === 1 ? "" : "s"} forwarded`);
+  }
+
+  /** Tailwind class for the action button in the bulk toolbar. The danger
+   *  flag flips it from blue to red for destructive actions like Delete. */
+  bulkBtnClass(danger: boolean): string {
+    const base = "text-[12px] font-medium px-2.5 py-1 rounded transition disabled:opacity-50 disabled:cursor-not-allowed";
+    return danger
+      ? `${base} text-red-600 hover:bg-white`
+      : `${base} text-blue-700 hover:bg-white`;
+  }
+
+  /** trackBy for the popup *ngFor — keep popup components stable across
+   *  reorders so internal state (scroll position, draft) survives. */
+  trackPopup(_i: number, p: { convId: string }): string { return p.convId; }
+
+  /** Container class for the floating popup stack. Desktop: bottom-right
+   *  with a 16px right margin and 12px gap between popups. Mobile: full
+   *  width with 8px gutters so a 100vw-16px popup fits flush; popups stack
+   *  on top of one another (only one really fits on a phone screen). */
+  popupStackClass(): string {
+    const base = "fixed bottom-0 z-[55] flex pointer-events-none";
+    return this.bp.isMobile()
+      ? `${base} left-2 right-2 items-end gap-2`
+      : `${base} right-4 items-end gap-3`;
+  }
+
+  /** Open the current conversation as a Gmail/GChat-style floating card
+   *  in the bottom-right of the same window. The card has its own header,
+   *  messages list, and composer; multiple convs can be popped at once
+   *  and stack horizontally. */
+  openInPopup(): void {
+    const conv = this.state.currentConv();
+    if (!conv) return;
+    this.state.openConvAsPopup(conv.id);
+  }
 
   onHeaderBack(): void {
     // Close any open side panel first; otherwise close the active conv (mobile-style back)

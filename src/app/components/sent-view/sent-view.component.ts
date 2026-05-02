@@ -49,7 +49,7 @@ interface SentItem {
           <button
             *ngFor="let it of items(); trackBy: trackBy"
             (click)="openConv.emit(it.convId)"
-            class="w-full flex items-start gap-3 px-6 py-3 hover:bg-gray-50 text-left transition"
+            class="w-full flex items-start gap-3 px-4 sm:px-6 py-3 hover:bg-gray-50 text-left transition"
           >
             <app-avatar [user]="it.conv" [size]="36"></app-avatar>
             <div class="flex-1 min-w-0">
@@ -69,7 +69,7 @@ interface SentItem {
     </ng-template>
 
     <ng-template #header>
-      <div class="px-6 pt-5 pb-3 border-b border-gray-100 flex items-center gap-2">
+      <div class="px-4 sm:px-6 pt-5 pb-3 border-b border-gray-100 flex items-center gap-2">
         <button
           *ngIf="showBack"
           (click)="back.emit()"

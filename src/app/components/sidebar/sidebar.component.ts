@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from "@a
 import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { ChatStateService } from "../../services/chat-state.service";
+import { BreakpointService } from "../../services/breakpoint.service";
 import { IconComponent } from "../icon/icon.component";
 import { SidebarItemComponent } from "../sidebar-item/sidebar-item.component";
 import { SectionHeaderComponent } from "../section-header/section-header.component";
@@ -236,9 +237,30 @@ import { SectionHeaderComponent } from "../section-header/section-header.compone
         </ng-template>
       </div>
 
-      <!-- Footer collapse button -->
-      <div class="border-t border-gray-100 p-2">
+      <!-- Footer: status pill + collapse button -->
+      <div class="border-t border-gray-100 p-2 space-y-1">
+        <!-- Status pill — shows current emoji+text or a "Set status" prompt.
+             Click opens the modal editor. -->
         <button
+          (click)="state.openStatusEditor()"
+          class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-gray-100 transition text-left"
+          [title]="state.userStatus() ? 'Update status' : 'Set a status'"
+        >
+          <span class="w-7 h-7 shrink-0 flex items-center justify-center text-[16px] rounded-full bg-gray-50 ring-1 ring-gray-200">
+            {{ state.userStatus()?.emoji || '😶' }}
+          </span>
+          <span class="flex-1 min-w-0">
+            <span *ngIf="state.userStatus(); else noStatus"
+                  class="block text-[13px] text-gray-900 truncate">
+              {{ state.userStatus()?.text }}
+            </span>
+            <ng-template #noStatus>
+              <span class="block text-[13px] text-gray-500">Set a status</span>
+            </ng-template>
+          </span>
+        </button>
+        <button
+          *ngIf="!bp.isMobile()"
           (click)="state.sidebarCollapsed.set(true)"
           class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[13px] text-gray-600 hover:bg-gray-100 transition"
           title="Collapse sidebar"
@@ -252,6 +274,7 @@ import { SectionHeaderComponent } from "../section-header/section-header.compone
 })
 export class SidebarComponent {
   state = inject(ChatStateService);
+  bp    = inject(BreakpointService);
 
   shortcutsOpen = signal(true);
   addingSection = signal(false);
@@ -271,7 +294,7 @@ export class SidebarComponent {
   pinnedCount = computed(() => this.state.conversations().filter((c) => c.pinned).length);
 
   get asideClass(): string {
-    const w = this.state.sidebarFullScreen() ? "w-full" : "w-[260px]";
+    const w = (this.state.sidebarFullScreen() || this.bp.isMobile()) ? "w-full" : "w-[260px]";
     // h-full so the inner aside stretches across the host's full height —
     // this is what lets `flex-1` on the scrollable body push the footer
     // (Collapse button) to the bottom.

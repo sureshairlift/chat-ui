@@ -65,6 +65,7 @@ export class ChatStateService {
   readonly showTasks        = signal(false);
   readonly showPinned       = signal(false);
   readonly showSharedMedia  = signal(false);
+  readonly showStatusEditor = signal(false);
 
   /* ---------------------- Layout / resizable ---------------------- */
 
@@ -91,6 +92,34 @@ export class ChatStateService {
     if (!Number.isFinite(n)) return fallback;
     return Math.max(min, Math.min(max, n));
   }
+
+  /* ---------------------- User status (persisted) ----------------------
+   *  Custom Slack/GChat-style status — emoji + short text + optional
+   *  auto-clear timestamp. Persisted across reloads. The constructor
+   *  starts a setInterval that clears expired statuses once a minute. */
+  private readonly USER_STATUS_KEY = "airlift-chat:user-status";
+  readonly userStatus = signal<{ emoji: string; text: string; clearAt: number | null } | null>(this.loadUserStatus());
+
+  private loadUserStatus(): { emoji: string; text: string; clearAt: number | null } | null {
+    if (typeof localStorage === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(this.USER_STATUS_KEY);
+      if (!raw) return null;
+      const v = JSON.parse(raw);
+      if (!v || typeof v !== "object" || !v.emoji || typeof v.text !== "string") return null;
+      // Skip if already expired.
+      if (typeof v.clearAt === "number" && v.clearAt > 0 && Date.now() >= v.clearAt) return null;
+      return { emoji: String(v.emoji), text: String(v.text), clearAt: v.clearAt ?? null };
+    } catch { return null; }
+  }
+  setUserStatus(value: { emoji: string; text: string; clearAt: number | null } | null): void {
+    this.userStatus.set(value);
+    if (typeof localStorage !== "undefined") {
+      if (value) localStorage.setItem(this.USER_STATUS_KEY, JSON.stringify(value));
+      else       localStorage.removeItem(this.USER_STATUS_KEY);
+    }
+  }
+  clearUserStatus(): void { this.setUserStatus(null); }
 
   /* ---------------------- Composer reply state ---------------------- */
 
@@ -175,6 +204,21 @@ export class ChatStateService {
   /** "Split pane" toggle (placeholder — used by HomeList header in some modes) */
   readonly splitPane = signal(false);
 
+  /** Multi-select for bulk actions on messages. Holds the IDs of currently
+   *  selected messages. Cleared on conv switch (handled by setActiveConv).
+   *  Selection mode is only entered when the user picks Save / Forward /
+   *  Delete from a message's More menu — `pendingBulkAction` records which
+   *  one. The selection bar at the top of the conv shows just that action,
+   *  not all three, so the workflow stays focused. */
+  readonly selectedMsgs = signal<Set<string>>(new Set());
+  readonly pendingBulkAction = signal<"save" | "forward" | "delete" | null>(null);
+
+  /** Conversations currently popped out as floating Gmail/GChat-style cards
+   *  in the bottom-right of the viewport. Each entry can be minimized
+   *  independently. The order in the array is the visual order from
+   *  right-to-left (most-recent on the right). */
+  readonly popupConvs = signal<{ convId: string; minimized: boolean }[]>([]);
+
   /* ---------------------- Derived state ---------------------- */
 
   /** Current conversation object (or null). */
@@ -216,6 +260,19 @@ export class ChatStateService {
         localStorage.setItem(this.THREAD_WIDTH_KEY, String(w));
       }
     });
+
+    // Auto-clear expired user statuses. Every 30s we check whether the
+    // current status has hit its clearAt timestamp; if so, drop it. 30s
+    // is a coarse but cheap cadence — for a UX where the user picks
+    // "clear in 1 hour" they don't notice the up-to-30s lag.
+    if (typeof window !== "undefined") {
+      setInterval(() => {
+        const s = this.userStatus();
+        if (s && typeof s.clearAt === "number" && s.clearAt > 0 && Date.now() >= s.clearAt) {
+          this.setUserStatus(null);
+        }
+      }, 30_000);
+    }
   }
 
   /* ============================================================
@@ -245,6 +302,8 @@ export class ChatStateService {
     this.activeConv.set(id);
     this.view.set("home");
     this.closeAllSidePanels();
+    // Multi-select state is per-conversation — clear when switching.
+    this.clearSelection();
     if (id) {
       // Mark conv read on open
       this.markConvRead(id);
@@ -345,6 +404,71 @@ export class ChatStateService {
     }));
   }
 
+  /* ----- Multi-select / bulk actions ----- */
+
+  toggleMsgSelection(msgId: string): void {
+    this.selectedMsgs.update((s) => {
+      const next = new Set(s);
+      if (next.has(msgId)) next.delete(msgId);
+      else next.add(msgId);
+      return next;
+    });
+  }
+  clearSelection(): void {
+    this.selectedMsgs.set(new Set());
+    this.pendingBulkAction.set(null);
+  }
+  isMsgSelected(msgId: string): boolean { return this.selectedMsgs().has(msgId); }
+
+  /** Enter bulk-action mode for a specific action with one message
+   *  pre-selected. Called when the user picks Save / Forward / Delete
+   *  from a message's More menu. */
+  enterBulkMode(action: "save" | "forward" | "delete", msgId: string): void {
+    this.pendingBulkAction.set(action);
+    this.selectedMsgs.set(new Set([msgId]));
+  }
+
+  /** Delete all currently selected messages — but only the user's own ones.
+   *  Other senders' messages in the selection are silently ignored, so
+   *  hostile selection (somehow getting another sender's id into the set)
+   *  can't accidentally delete content. */
+  bulkDeleteSelected(): number {
+    const ids = this.selectedMsgs();
+    const convId = this.activeConv();
+    if (!convId || ids.size === 0) return 0;
+    const msgs = this.messagesByConv()[convId] ?? [];
+    const ownIds = new Set(msgs.filter((m) => m.sender === "me" && ids.has(m.id)).map((m) => m.id));
+    if (ownIds.size === 0) { this.clearSelection(); return 0; }
+    this.messagesByConv.update((map) => ({
+      ...map,
+      [convId]: (map[convId] ?? []).filter((m) => !ownIds.has(m.id)),
+    }));
+    this.clearSelection();
+    return ownIds.size;
+  }
+
+  /** Save (bookmark) every selected message at once. */
+  bulkSaveSelected(): number {
+    const ids = this.selectedMsgs();
+    if (ids.size === 0) return 0;
+    const count = ids.size;
+    this.savedMsgs.update((map) => {
+      const next = { ...map };
+      ids.forEach((id) => { next[id] = true; });
+      return next;
+    });
+    this.clearSelection();
+    return count;
+  }
+
+  /** Forward selected messages — stub for now. Real forwarding would open
+   *  a conv picker; we just clear the selection and let the caller toast. */
+  bulkForwardSelected(): number {
+    const count = this.selectedMsgs().size;
+    this.clearSelection();
+    return count;
+  }
+
   /* ----- Reactions / Pins / Saves ----- */
 
   toggleReaction(msgId: string, emoji: string): void {
@@ -432,6 +556,39 @@ export class ChatStateService {
   openPinned():      void { this.closeAllSidePanels(); this.showPinned.set(true); }
   openSharedMedia(): void { this.closeAllSidePanels(); this.showSharedMedia.set(true); }
   openSearch():      void { this.showSearch.set(true); }
+  openStatusEditor():  void { this.showStatusEditor.set(true); }
+  closeStatusEditor(): void { this.showStatusEditor.set(false); }
+
+  /* ----- Floating conversation popups (Gmail/GChat-style) ----- */
+
+  /** Pop a conversation out into a floating card at the bottom-right.
+   *  No-op if the conv is already a popup (we focus/restore it instead). */
+  openConvAsPopup(convId: string): void {
+    this.popupConvs.update((list) => {
+      const existing = list.find((p) => p.convId === convId);
+      if (existing) {
+        // Already popped out — just un-minimize so the user notices.
+        return list.map((p) => (p.convId === convId ? { ...p, minimized: false } : p));
+      }
+      return [...list, { convId, minimized: false }];
+    });
+  }
+
+  closeConvPopup(convId: string): void {
+    this.popupConvs.update((list) => list.filter((p) => p.convId !== convId));
+  }
+
+  toggleConvPopupMinimized(convId: string): void {
+    this.popupConvs.update((list) =>
+      list.map((p) => (p.convId === convId ? { ...p, minimized: !p.minimized } : p))
+    );
+  }
+
+  /** Close the popup and switch the main window to that conversation. */
+  restoreConvPopupToMain(convId: string): void {
+    this.closeConvPopup(convId);
+    this.setActiveConv(convId);
+  }
 
   closeThread():       void { this.showThread.set(null); }
   closeBoard():        void { this.showBoard.set(false); }

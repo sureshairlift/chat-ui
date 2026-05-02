@@ -5,6 +5,7 @@ import {
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
 import { ToastService } from "../../services/toast.service";
+import { FilePreviewService } from "../../services/file-preview.service";
 import { SENDERS } from "../../data/senders";
 import { Attachment, Conversation, Message, Sender } from "../../models/types";
 
@@ -127,8 +128,9 @@ type TabKey = "all" | "images" | "media" | "files";
   `,
 })
 export class SharedMediaPanelComponent {
-  state = inject(ChatStateService);
-  toast = inject(ToastService);
+  state   = inject(ChatStateService);
+  toast   = inject(ToastService);
+  preview = inject(FilePreviewService);
 
   @Input() conv: Conversation | null = null;
   @Input() fullscreen = false;
@@ -205,7 +207,10 @@ export class SharedMediaPanelComponent {
   }
 
   onPreview(att: SharedItem): void {
-    this.toast.show(`Preview: ${att.name}`);
+    // Open the FilePreviewOverlay with siblings from the same tab so the
+    // overlay's prev/next chevrons walk every shared item the user is
+    // currently looking at, not just one.
+    this.preview.open(att, this.filtered());
   }
 
   handleClose(): void {

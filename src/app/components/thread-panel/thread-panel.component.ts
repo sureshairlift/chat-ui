@@ -5,8 +5,9 @@ import {
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
 import { SENDERS } from "../../data/senders";
-import { Message, ThreadReply, Sender } from "../../models/types";
+import { Attachment, Message, ThreadReply, Sender } from "../../models/types";
 import { sanitizeHtml, renderTextWithLinksHtml } from "../../services/helpers";
+import { FilePreviewService } from "../../services/file-preview.service";
 
 import { IconComponent } from "../icon/icon.component";
 import { AvatarComponent } from "../avatar/avatar.component";
@@ -98,12 +99,13 @@ interface DisplayReply extends ThreadReply {
                 </ng-template>
               </div>
               <div *ngIf="parent.attachments?.length" class="mt-2 space-y-1.5">
-                <div *ngFor="let att of parent.attachments"
-                     class="flex items-center gap-2 px-2.5 py-1.5 bg-gray-50 rounded-lg ring-1 ring-gray-200 text-[12px] text-gray-700 max-w-full">
+                <button *ngFor="let att of parent.attachments"
+                        (click)="openPreview(att, parent.attachments!)"
+                        class="w-full flex items-center gap-2 px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 rounded-lg ring-1 ring-gray-200 text-[12px] text-gray-700 max-w-full text-left transition">
                   <app-file-type-icon [ext]="(att.ext || '')" [size]="20"></app-file-type-icon>
                   <span class="truncate flex-1 min-w-0">{{ att.name }}</span>
                   <span *ngIf="att.size" class="text-gray-500 shrink-0">{{ att.size }}</span>
-                </div>
+                </button>
               </div>
             </div>
           </div>
@@ -198,7 +200,14 @@ interface DisplayReply extends ThreadReply {
   `,
 })
 export class ThreadPanelComponent implements OnChanges {
-  state = inject(ChatStateService);
+  state   = inject(ChatStateService);
+  preview = inject(FilePreviewService);
+
+  /** Open the FilePreviewOverlay with the parent message's attachments
+   *  as siblings, so the user can flip through all of them. */
+  openPreview(att: Attachment, siblings: Attachment[]): void {
+    this.preview.open(att, siblings);
+  }
 
   @Input({ required: true }) parent!: Message;
   @Input() fullscreen = false;

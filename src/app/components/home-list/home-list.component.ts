@@ -183,6 +183,7 @@ import { ResizeHandleComponent } from "../resize-handle/resize-handle.component"
             (picked)="picked.emit($event)"
             (toggleSummary)="toggleSummary($event)"
             (moveSection)="onMove($event)"
+            (openInPopup)="popOut.emit($event)"
           ></app-conversation-list-item>
         </div>
 
@@ -203,6 +204,7 @@ import { ResizeHandleComponent } from "../resize-handle/resize-handle.component"
             (picked)="picked.emit($event)"
             (toggleSummary)="toggleSummary($event)"
             (moveSection)="onMove($event)"
+            (openInPopup)="popOut.emit($event)"
           ></app-conversation-list-item>
         </div>
       </ng-container>
@@ -226,6 +228,8 @@ export class HomeListComponent {
   @Output() picked = new EventEmitter<string>();
   @Output() startResize = new EventEmitter<MouseEvent>();
   @Output() openDrawer = new EventEmitter<void>();
+  /** Bubbles up the convId when a row's "Open in popup" menu item is clicked. */
+  @Output() popOut = new EventEmitter<string>();
 
   expandedSummaries = signal<Set<string>>(new Set());
   customerFilter = signal<"all" | "direct" | "groups">("all");

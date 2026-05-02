@@ -283,6 +283,8 @@ export class ConversationHeaderComponent implements OnDestroy {
   @Output() blockReport = new EventEmitter<void>();
   @Output() clearHistory = new EventEmitter<void>();
   @Output() newAIChat = new EventEmitter<void>();
+  /** Pop the conversation out into its own browser window (Google-Chat-style). */
+  @Output() openInPopup = new EventEmitter<void>();
   /** Toggle the in-conversation search bar (distinct from the global Cmd+K modal). */
   @Output() toggleConvSearch = new EventEmitter<void>();
 
@@ -391,6 +393,14 @@ export class ConversationHeaderComponent implements OnDestroy {
                  onClick: () => this.state.openSharedMedia() });
     items.push({ icon: "bookmark", label: "Mark as unread",
                  onClick: () => this.markUnread.emit() });
+    // Open in popup — hidden for AI sessions (popping the AI out doesn't add
+    // value, it's the same instance everywhere) and for any conv that's
+    // already popped out (no point popping it from itself).
+    const alreadyPopped = this.state.popupConvs().some((p) => p.convId === c.id);
+    if (!alreadyPopped && !c.isAI && !this.isMobile) {
+      items.push({ icon: "external-link", label: "Open in popup",
+                   onClick: () => this.openInPopup.emit() });
+    }
     items.push({ divider: true });
 
     if (c.type === "dm") {

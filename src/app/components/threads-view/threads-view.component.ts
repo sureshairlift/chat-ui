@@ -50,7 +50,7 @@ type ThreadFilter = "all" | "replied" | "mentioned" | "followed";
   template: `
     <div class="flex-1 flex flex-col bg-white h-full w-full min-h-0">
       <!-- ============== Header ============== -->
-      <div class="px-6 pt-5 pb-3 border-b border-gray-100">
+      <div class="px-4 sm:px-6 pt-5 pb-3 border-b border-gray-100">
         <div class="flex items-start gap-2">
           <button
             *ngIf="showBack"
@@ -122,7 +122,7 @@ type ThreadFilter = "all" | "replied" | "mentioned" | "followed";
                class="group/threadrow relative">
             <button
               (click)="openThread.emit({ msgId: it.parentMsgId, convId: it.convId })"
-              [class]="'block w-full text-left px-5 py-4 hover:bg-gray-50 transition ' +
+              [class]="'block w-full text-left px-4 sm:px-5 py-4 hover:bg-gray-50 transition ' +
                 (it.isUnread ? 'bg-blue-50/30' : '')"
             >
               <div class="flex items-start gap-3">

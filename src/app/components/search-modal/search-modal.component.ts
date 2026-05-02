@@ -135,7 +135,7 @@ interface SegmentList { before: string; match: string; after: string; }
             <button
               *ngFor="let mr of messageResults(); let i = index"
               (mouseenter)="setIdx(messageIndex(i))"
-              (click)="pickConv(mr.conv)"
+              (click)="pickMessageHit(mr)"
               [class]="rowClass(messageIndex(i)) + ' items-start'"
             >
               <app-avatar [user]="mr.conv" [size]="32"></app-avatar>
@@ -170,6 +170,9 @@ export class SearchModalComponent implements AfterViewInit {
 
   @Output() closed = new EventEmitter<void>();
   @Output() pickConvId = new EventEmitter<string>();
+  /** Fired when the user picks a *message* result — carries the msgId so
+   *  the caller can scroll the conversation pane to that message. */
+  @Output() pickMessage = new EventEmitter<{ convId: string; msgId: string }>();
 
   @ViewChild("input") input?: ElementRef<HTMLInputElement>;
 
@@ -279,10 +282,15 @@ export class SearchModalComponent implements AfterViewInit {
     this.pickConvId.emit(c.id);
     this.closed.emit();
   }
+  /** Pick a specific message result — caller scrolls the conv pane to it. */
+  pickMessageHit(mr: { conv: Conversation; msg: Message }): void {
+    this.pickMessage.emit({ convId: mr.conv.id, msgId: mr.msg.id });
+    this.closed.emit();
+  }
   pickHit(h: Hit): void {
     if (h.kind === "person")  this.pickPerson(h.data);
     else if (h.kind === "conv") this.pickConv(h.data);
-    else this.pickConv(h.data.conv);
+    else this.pickMessageHit(h.data);
   }
 
   /* --------------------------- Keyboard ---------------------------- */

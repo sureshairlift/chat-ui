@@ -16,6 +16,7 @@ import { AIChartMessageComponent } from "../ai-chart-message/ai-chart-message.co
 import { AIListMessageComponent } from "../ai-list-message/ai-list-message.component";
 import { AIRatedMessageComponent } from "../ai-rated-message/ai-rated-message.component";
 import { ReactionBarComponent } from "../reaction-bar/reaction-bar.component";
+import { LinkPreviewComponent } from "../link-preview/link-preview.component";
 import { RenderTextPipe, SafeHtmlPipe } from "../../pipes/render-text.pipe";
 
 /**
@@ -40,7 +41,7 @@ import { RenderTextPipe, SafeHtmlPipe } from "../../pipes/render-text.pipe";
     CommonModule, FormsModule, IconComponent, AvatarComponent,
     AttachmentRendererComponent, AIChartMessageComponent,
     AIListMessageComponent, AIRatedMessageComponent, ReactionBarComponent,
-    RenderTextPipe, SafeHtmlPipe,
+    LinkPreviewComponent, RenderTextPipe, SafeHtmlPipe,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -91,8 +92,22 @@ import { RenderTextPipe, SafeHtmlPipe } from "../../pipes/render-text.pipe";
           (mouseenter)="hover.set(true)"
           (mouseleave)="onLeave()"
         >
-          <div class="w-9 shrink-0 flex justify-center pt-1">
-            <app-avatar *ngIf="showAvatar && !isMe" [user]="sender" [size]="32"></app-avatar>
+          <div class="w-9 shrink-0 flex justify-center pt-1 relative">
+            <!-- Avatar hides when the checkbox is showing so the two don't
+                 stack on top of each other — the checkbox visually replaces
+                 the avatar slot in bulk-action mode. -->
+            <app-avatar *ngIf="showAvatar && !isMe && !showCheckbox" [user]="sender" [size]="32"></app-avatar>
+            <!-- Selection checkbox — only rendered when the user has entered
+                 bulk-action mode (via Save/Forward/Delete in the More menu).
+                 In delete mode, others' messages don't get a checkbox. -->
+            <button
+              *ngIf="showCheckbox"
+              (click)="onToggleSelect($event)"
+              [class]="checkboxClass"
+              [title]="isSelected ? 'Deselect' : 'Select'"
+            >
+              <app-icon *ngIf="isSelected" name="check" [size]="11" class="text-white"></app-icon>
+            </button>
           </div>
 
           <div [class]="'flex-1 min-w-0 ' + (isMe ? 'flex flex-col items-end' : '')">
@@ -228,12 +243,25 @@ import { RenderTextPipe, SafeHtmlPipe } from "../../pipes/render-text.pipe";
                           {{ isPinned ? 'Unpin' : 'Pin' }}
                         </button>
                         <button
-                          (click)="onToggleSave()"
+                          (click)="onEnterBulkSave()"
                           class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left"
                         >
-                          <app-icon name="bookmark" [size]="14"
-                                    [class]="isSaved ? 'text-blue-600' : 'text-gray-500'"></app-icon>
-                          {{ isSaved ? 'Unsave' : 'Save' }}
+                          <app-icon name="bookmark" [size]="14" class="text-gray-500"></app-icon>
+                          Save
+                        </button>
+                        <button
+                          (click)="onEnterBulkForward()"
+                          class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left"
+                        >
+                          <app-icon name="send" [size]="14" class="text-gray-500"></app-icon>
+                          Forward
+                        </button>
+                        <button
+                          (click)="onCreateTask()"
+                          class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left"
+                        >
+                          <app-icon name="check-circle-2" [size]="14" class="text-gray-500"></app-icon>
+                          Create task
                         </button>
                         <ng-container *ngIf="isMe">
                           <div class="h-px bg-gray-100 my-1"></div>
@@ -247,7 +275,7 @@ import { RenderTextPipe, SafeHtmlPipe } from "../../pipes/render-text.pipe";
                             Edit
                           </button>
                           <button
-                            (click)="onDelete()"
+                            (click)="onEnterBulkDelete()"
                             class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-red-50 text-red-600 text-left"
                           >
                             <app-icon name="trash-2" [size]="14"></app-icon>
@@ -274,6 +302,11 @@ import { RenderTextPipe, SafeHtmlPipe } from "../../pipes/render-text.pipe";
             <app-attachment-renderer *ngIf="msg.attachments?.length"
                                      [attachments]="msg.attachments">
             </app-attachment-renderer>
+
+            <!-- Inline link previews — one card per URL found in the message
+                 body. Rendered after attachments so they don't compete for
+                 attention. Capped to 2 to avoid filling the screen. -->
+            <app-link-preview *ngFor="let u of links()" [url]="u"></app-link-preview>
 
             <!-- Reaction chips -->
             <div *ngIf="reactionList().length > 0"
@@ -355,16 +388,99 @@ export class MessageBubbleComponent implements OnDestroy {
     return this.msg.reactions || [];
   });
 
+  /** Extract up to 2 distinct URLs from the message body so they can be
+   *  rendered as inline preview cards below the bubble. Skips system /
+   *  meeting / AI variants since those aren't user-typed text. Cached
+   *  per-instance via a memoized getter — `msg` is a fixed `@Input` per
+   *  bubble so we only need to compute once. */
+  private _links: string[] | null = null;
+  links(): string[] {
+    if (this._links !== null) return this._links;
+    const m = this.msg;
+    if (!m || m.type === "system" || m.type === "meeting"
+        || m.type === "ai-chart" || m.type === "ai-list") {
+      return (this._links = []);
+    }
+    const haystack = (m.text || "") + " " +
+      (m.html ? m.html.replace(/<[^>]+>/g, " ") : "");
+    const urlRe = /https?:\/\/[^\s<>"']+/g;
+    const seen = new Set<string>();
+    const out: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = urlRe.exec(haystack)) !== null && out.length < 2) {
+      const u = match[0].replace(/[.,;:!?]+$/, "");  // strip trailing punctuation
+      if (!seen.has(u)) { seen.add(u); out.push(u); }
+    }
+    return (this._links = out);
+  }
+
   editRows = computed(() =>
     Math.min(6, Math.max(2, this.editValue().split("\n").length))
   );
 
   /* ------------------------------ Layout ------------------------------ */
   get rootClass(): string {
-    const base = "group relative flex gap-3 px-3 sm:px-6 py-1 hover:bg-gray-50/60 transition-colors";
+    const base = "group relative flex gap-3 px-3 sm:px-6 py-1 transition-colors";
+    const hover = this.isSelected ? "bg-blue-50/80" : "hover:bg-gray-50/60";
     const dir = this.isMe ? "flex-row-reverse" : "";
     const high = this.highlight ? "bg-amber-50 ring-1 ring-amber-300 ring-inset rounded-md" : "";
-    return `${base} ${dir} ${high}`;
+    return `${base} ${hover} ${dir} ${high}`;
+  }
+
+  /** True when this message is part of the current bulk-select set. */
+  get isSelected(): boolean {
+    return this.state.selectedMsgs().has(this.msg.id);
+  }
+  /** True when the user is in "selection mode" (>=1 message selected) — used
+   *  to keep the checkbox visible on every bubble, not just the hovered one. */
+  get inSelectionMode(): boolean {
+    return this.state.selectedMsgs().size > 0;
+  }
+  /** Toggle this message's selection. Stops propagation so a click on the
+   *  checkbox doesn't also fire other bubble interactions. */
+  onToggleSelect(e: Event): void {
+    e.stopPropagation();
+    // In delete mode, only the user's own messages can be selected.
+    if (this.state.pendingBulkAction() === "delete" && !this.isMe) return;
+    this.state.toggleMsgSelection(this.msg.id);
+  }
+
+  /** Whether the selection checkbox should render at all for this bubble.
+   *  Visible only after the user has picked Save / Forward / Delete from
+   *  the More menu — that's what kicks the app into selection mode. In
+   *  delete mode, others' messages don't get a checkbox (delete is
+   *  restricted to own messages). */
+  get showCheckbox(): boolean {
+    const action = this.state.pendingBulkAction();
+    if (!action) return false;
+    if (action === "delete" && !this.isMe) return false;
+    return true;
+  }
+
+  /** Selection checkbox styling — only used when `showCheckbox` is true.
+   *  Filled blue when selected, hollow gray ring otherwise. */
+  get checkboxClass(): string {
+    const base = "absolute inset-0 m-auto w-5 h-5 rounded-full flex items-center justify-center transition cursor-pointer";
+    const tone = this.isSelected
+      ? "bg-blue-600 ring-2 ring-blue-600 hover:bg-blue-700"
+      : "bg-white ring-2 ring-gray-300 hover:ring-blue-500";
+    return `${base} ${tone}`;
+  }
+
+  /* ============== Bulk-mode entry from the More menu ============== */
+
+  onEnterBulkSave(): void {
+    this.state.enterBulkMode("save", this.msg.id);
+    this.showMenu.set(false);
+  }
+  onEnterBulkForward(): void {
+    this.state.enterBulkMode("forward", this.msg.id);
+    this.showMenu.set(false);
+  }
+  onEnterBulkDelete(): void {
+    if (!this.isMe) return; // Defensive — Delete item is only rendered for own msgs
+    this.state.enterBulkMode("delete", this.msg.id);
+    this.showMenu.set(false);
   }
 
   get bubbleClass(): string {
@@ -432,6 +548,29 @@ export class MessageBubbleComponent implements OnDestroy {
   onToggleSave(): void {
     this.state.toggleSave(this.msg.id);
     this.toast.show(this.isSaved ? "Removed from saved" : "Saved");
+    this.showMenu.set(false);
+  }
+
+  /** Create a task in the current conv with this message's text as the
+   *  title. Opens the Tasks side panel afterwards so the user can see /
+   *  edit it. Title is truncated at 80 chars to keep the task list clean. */
+  onCreateTask(): void {
+    const raw = this.msg.html
+      ? this.msg.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+      : (this.msg.text || "").trim();
+    if (!raw) {
+      this.showMenu.set(false);
+      return;
+    }
+    const title = raw.length > 80 ? raw.slice(0, 80) + "…" : raw;
+    this.state.addTask(this.convId, {
+      id: `task-${Date.now()}`,
+      title,
+      done: false,
+      assignee: "me",
+    });
+    this.state.openTasks();
+    this.toast.show("Task created");
     this.showMenu.set(false);
   }
 

@@ -1,9 +1,10 @@
 import {
   ChangeDetectionStrategy, Component, EventEmitter, HostListener,
-  Input, OnDestroy, Output, signal,
+  Input, OnDestroy, Output, inject, signal,
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { Conversation, CustomSection } from "../../models/types";
+import { BreakpointService } from "../../services/breakpoint.service";
 import { IconComponent } from "../icon/icon.component";
 import { AvatarComponent } from "../avatar/avatar.component";
 
@@ -103,6 +104,14 @@ import { AvatarComponent } from "../avatar/avatar.component";
                 <button class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
                   <app-icon name="check-circle-2" [size]="14"></app-icon> Mark as read
                 </button>
+                <!-- Open in popup — not offered for AI sessions; popping
+                     out an AI chat doesn't add value (the AI is the same
+                     instance everywhere). -->
+                <button *ngIf="!c.isAI && !bp.isMobile()"
+                        (click)="onOpenInPopup($event)"
+                        class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
+                  <app-icon name="external-link" [size]="14"></app-icon> Open in popup
+                </button>
 
                 <ng-container *ngIf="customSections && customSections.length > 0">
                   <div class="h-px bg-gray-100 my-1"></div>
@@ -178,6 +187,8 @@ import { AvatarComponent } from "../avatar/avatar.component";
   `,
 })
 export class ConversationListItemComponent implements OnDestroy {
+  bp = inject(BreakpointService);
+
   @Input({ required: true }) c!: Conversation;
   @Input() isActive = false;
   @Input() expanded = false;
@@ -185,6 +196,8 @@ export class ConversationListItemComponent implements OnDestroy {
   @Output() picked = new EventEmitter<string>();
   @Output() toggleSummary = new EventEmitter<string>();
   @Output() moveSection = new EventEmitter<{ id: string; section: string | null }>();
+  /** Pop the conv out into a floating Gmail/GChat-style window. */
+  @Output() openInPopup = new EventEmitter<string>();
 
   feedback = signal<"up" | "down" | null>(null);
   menuOpen = signal(false);
@@ -239,6 +252,15 @@ export class ConversationListItemComponent implements OnDestroy {
 
   moveToSection(secId: string | null): void {
     this.moveSection.emit({ id: this.c.id, section: secId });
+    this.menuOpen.set(false);
+  }
+
+  /** Pop the chat out into a floating window. Stops propagation so the
+   *  click doesn't also bubble up to the row's row-level click handler
+   *  (which would activate the conv in the main pane). */
+  onOpenInPopup(e: Event): void {
+    e.stopPropagation();
+    this.openInPopup.emit(this.c.id);
     this.menuOpen.set(false);
   }
 
