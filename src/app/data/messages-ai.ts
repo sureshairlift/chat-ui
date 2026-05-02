@@ -1,0 +1,68 @@
+import { MessagesByConv } from "../models/types";
+
+export const MESSAGES_AI: MessagesByConv = {
+  "ai-new": [
+    { id: "an1", sender: "airliftai", type: "ai-text", time: "now",
+      text: "Hi! I'm Airlift Intelligence — your AI assistant for Airlift USA Inc. I can help you analyze sales, draft messages, summarize meetings, review pipeline, and answer questions about your team's activity. What would you like to explore?" },
+  ],
+  "ai-q4-sales": [
+    { id: "q1", sender: "me", time: "10:02 AM",
+      text: "Show me Q4 sales performance by region" },
+    { id: "q2", sender: "airliftai", type: "ai-chart", time: "10:02 AM",
+      chartTitle: "Q4 Sales by Region (USD)",
+      chartSubtitle: "October — December 2025",
+      chartData: [
+        { label: "West",      value: 248000, color: "#3b82f6" },
+        { label: "East",      value: 192000, color: "#10b981" },
+        { label: "South",     value: 156000, color: "#f59e0b" },
+        { label: "Midwest",   value: 134000, color: "#8b5cf6" },
+        { label: "Northeast", value: 98000,  color: "#ec4899" },
+      ],
+      summary: "West region led Q4 with $248K — up 18% QoQ. East and South both grew steadily, while Northeast underperformed forecast by 12%. Recommend reviewing Northeast pipeline." },
+    { id: "q3", sender: "me", time: "10:04 AM",
+      text: "What's driving the underperformance in Northeast?" },
+    { id: "q4", sender: "airliftai", type: "ai-rated", time: "10:04 AM",
+      text: "Three factors stand out from your CRM and call recordings:\n\n1. Lead volume dropped 22% in Nov-Dec — the marketing campaign budget shifted to West for the holiday push.\n2. Two of your top accounts (Riverside Logistics, Metro Freight) paused renewals citing rate increases.\n3. Your strongest AE in the region (Marcus) was on parental leave for 6 weeks during the quarter.\n\nRecommended next step: book 30 minutes with the Northeast team lead to plan a Q1 recovery push.",
+      sources: ["CRM data", "Call recordings", "HR roster"] },
+  ],
+  "ai-tasks": [
+    { id: "t1", sender: "me", time: "9:15 AM",
+      text: "What are today's sales activities?" },
+    { id: "t2", sender: "airliftai", type: "ai-list", time: "9:15 AM",
+      listTitle: "Today's Sales Activities",
+      listSubtitle: "Wednesday, April 30 · 8 items",
+      items: [
+        { icon: "phone",    title: "Discovery call — Acme Corp",       meta: "10:30 AM · Sarah Chen",       status: "done" },
+        { icon: "users",    title: "Demo — Lighthouse Logistics",      meta: "11:00 AM · Marcus Patel",     status: "done" },
+        { icon: "dollar",   title: "Contract review — Northstar Inc.", meta: "1:00 PM · $45,000 ARR",       status: "active" },
+        { icon: "target",   title: "Proposal due — TransGlobal",       meta: "2:30 PM · High priority",     status: "active" },
+        { icon: "users",    title: "Follow-up — Riverstone Freight",   meta: "3:00 PM · Kavya N.",          status: "pending" },
+        { icon: "phone",    title: "Cold outreach batch (12 leads)",   meta: "4:00 PM · Auto-sequence",     status: "pending" },
+        { icon: "trending", title: "Pipeline review with Ram",         meta: "5:00 PM · Weekly sync",       status: "pending" },
+        { icon: "check",    title: "CRM hygiene — Q2 cleanup",         meta: "6:00 PM · Self",              status: "pending" },
+      ],
+      summary: "2 of 8 done. $45K ARR contract is your highest-impact item — block 90 minutes." },
+  ],
+  "ai-followup": [
+    { id: "f1", sender: "me", time: "8:42 AM",
+      text: "Draft a polite follow-up to Northstar about the contract" },
+    { id: "f2", sender: "airliftai", type: "ai-rated", time: "8:42 AM",
+      text: "Here's a draft you can adapt:\n\nHi [Name],\n\nThanks again for the time on Tuesday — really appreciated the candid walkthrough of your routing challenges. I've revised the proposal to reflect the volume tiers we discussed and added the SLA addendum your ops team flagged.\n\nWould Thursday or Friday this week work for a 20-minute review? Happy to walk through the changes line-by-line.\n\nLooking forward,\n[Your name]",
+      sources: ["Northstar deal notes", "Sales playbook v3", "Email tone: warm-professional"] },
+  ],
+  "ai-pipeline": [
+    { id: "p1", sender: "me", time: "Yesterday",
+      text: "Give me the pipeline overview" },
+    { id: "p2", sender: "airliftai", type: "ai-chart", time: "Yesterday",
+      chartTitle: "Sales Pipeline by Stage",
+      chartSubtitle: "All deals · weighted value",
+      chartData: [
+        { label: "Prospect",    value: 312000, color: "#94a3b8" },
+        { label: "Qualified",   value: 245000, color: "#3b82f6" },
+        { label: "Proposal",    value: 178000, color: "#8b5cf6" },
+        { label: "Negotiation", value: 96000,  color: "#f59e0b" },
+        { label: "Closed-won",  value: 64000,  color: "#10b981" },
+      ],
+      summary: "Total weighted pipeline: $521K. Negotiation stage is healthiest — 67% close rate historically." },
+  ],
+};

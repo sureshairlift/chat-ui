@@ -1,0 +1,181 @@
+<!--
+  Inlined lucide-react icons. Each <svg> uses currentColor so callers control
+  color via a class. ViewBox is 24x24 to match lucide's defaults.
+  Stroke attributes match lucide: linejoin="round" linecap="round".
+-->
+<ng-container [ngSwitch]="key">
+
+  <!-- ============================ Navigation / chrome ============================ -->
+
+  <svg *ngSwitchCase="'message-square'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+
+  <svg *ngSwitchCase="'mail'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+
+  <svg *ngSwitchCase="'video'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
+
+  <svg *ngSwitchCase="'home'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+
+  <svg *ngSwitchCase="'at-sign'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
+
+  <svg *ngSwitchCase="'star'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+
+  <svg *ngSwitchCase="'chevron-down'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+
+  <svg *ngSwitchCase="'chevron-right'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+
+  <svg *ngSwitchCase="'chevron-left'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+
+  <svg *ngSwitchCase="'plus'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg>
+
+  <svg *ngSwitchCase="'search'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+
+  <svg *ngSwitchCase="'settings'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+
+  <svg *ngSwitchCase="'calendar'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+
+  <svg *ngSwitchCase="'pin'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="17" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
+
+  <svg *ngSwitchCase="'x'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+
+  <svg *ngSwitchCase="'maximize-2'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg>
+
+  <svg *ngSwitchCase="'minimize-2'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" x2="21" y1="10" y2="3"/><line x1="3" x2="10" y1="21" y2="14"/></svg>
+
+  <svg *ngSwitchCase="'phone'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+
+  <svg *ngSwitchCase="'folder-open'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></svg>
+
+  <svg *ngSwitchCase="'check-circle-2'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+
+  <svg *ngSwitchCase="'check-circle'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+
+  <svg *ngSwitchCase="'check'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+
+  <svg *ngSwitchCase="'smile'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg>
+
+  <svg *ngSwitchCase="'sticker'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/><path d="M10 16s.8 1 2 1 2-1 2-1"/><path d="M8 13h0"/><path d="M16 13h0"/></svg>
+
+  <svg *ngSwitchCase="'upload'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+
+  <svg *ngSwitchCase="'mic'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+
+  <svg *ngSwitchCase="'send'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+
+  <svg *ngSwitchCase="'reply'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+
+  <svg *ngSwitchCase="'more-horizontal'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+
+  <svg *ngSwitchCase="'more-vertical'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+
+  <svg *ngSwitchCase="'bell'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+
+  <svg *ngSwitchCase="'arrow-left'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+
+  <svg *ngSwitchCase="'quote'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
+
+  <svg *ngSwitchCase="'hash'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></svg>
+
+  <svg *ngSwitchCase="'grid-3x3'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+
+  <svg *ngSwitchCase="'sparkles'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4M19 17v4M3 5h4M17 19h4"/></svg>
+
+  <svg *ngSwitchCase="'thumbs-up'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L15 2.5a.5.5 0 0 1 .5-.5 2 2 0 0 1 2 2v1.88a2 2 0 0 1-.5 1.5z"/></svg>
+
+  <svg *ngSwitchCase="'thumbs-down'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L9 21.5a.5.5 0 0 1-.5.5 2 2 0 0 1-2-2v-1.88a2 2 0 0 1 .5-1.5z"/></svg>
+
+  <svg *ngSwitchCase="'bar-chart-3'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>
+
+  <svg *ngSwitchCase="'trending-up'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+
+  <svg *ngSwitchCase="'copy'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+
+  <svg *ngSwitchCase="'refresh-cw'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+
+  <svg *ngSwitchCase="'clock'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+
+  <svg *ngSwitchCase="'target'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+
+  <svg *ngSwitchCase="'users'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+
+  <svg *ngSwitchCase="'dollar-sign'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+
+  <!-- ============================ Composer toolbar ============================ -->
+
+  <svg *ngSwitchCase="'bold'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M14 12a4 4 0 0 0 0-8H6v8"/><path d="M15 20a4 4 0 0 0 0-8H6v8Z"/></svg>
+
+  <svg *ngSwitchCase="'italic'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/></svg>
+
+  <svg *ngSwitchCase="'underline'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" x2="20" y1="20" y2="20"/></svg>
+
+  <svg *ngSwitchCase="'strikethrough'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/></svg>
+
+  <svg *ngSwitchCase="'code'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+
+  <svg *ngSwitchCase="'list'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>
+
+  <svg *ngSwitchCase="'list-ordered'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="10" x2="21" y1="6" y2="6"/><line x1="10" x2="21" y1="12" y2="12"/><line x1="10" x2="21" y1="18" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+
+  <svg *ngSwitchCase="'table'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M3 15h18M12 3v18"/></svg>
+
+  <svg *ngSwitchCase="'palette'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+
+  <svg *ngSwitchCase="'paperclip'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8L9.41 17.32a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+
+  <svg *ngSwitchCase="'plane'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+
+  <svg *ngSwitchCase="'message-circle-more'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>
+
+  <svg *ngSwitchCase="'folder-plus'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+
+  <svg *ngSwitchCase="'trash-2'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+
+  <svg *ngSwitchCase="'building-2'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg>
+
+  <svg *ngSwitchCase="'globe'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+
+  <svg *ngSwitchCase="'external-link'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+
+  <svg *ngSwitchCase="'shield-alert'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4M12 16h.01"/></svg>
+
+  <svg *ngSwitchCase="'align-left'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="3" y1="6" y2="6"/><line x1="15" x2="3" y1="12" y2="12"/><line x1="17" x2="3" y1="18" y2="18"/></svg>
+
+  <svg *ngSwitchCase="'align-center'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="3" y1="6" y2="6"/><line x1="17" x2="7" y1="12" y2="12"/><line x1="19" x2="5" y1="18" y2="18"/></svg>
+
+  <svg *ngSwitchCase="'align-right'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="3" y1="6" y2="6"/><line x1="21" x2="9" y1="12" y2="12"/><line x1="21" x2="7" y1="18" y2="18"/></svg>
+
+  <svg *ngSwitchCase="'align-justify'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/></svg>
+
+  <svg *ngSwitchCase="'link-2'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
+
+  <svg *ngSwitchCase="'highlighter'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
+
+  <svg *ngSwitchCase="'remove-formatting'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M5 20h6"/><line x1="13" x2="3" y1="4" y2="14"/><path d="M16 9.5 19.5 13"/><path d="m22 11-3.5 3.5"/></svg>
+
+  <svg *ngSwitchCase="'rows-3'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M21 9H3M21 15H3"/></svg>
+
+  <svg *ngSwitchCase="'columns-3'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18M15 3v18"/></svg>
+
+  <svg *ngSwitchCase="'indent'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 7 12 3 16"/><line x1="21" x2="11" y1="12" y2="12"/><line x1="21" x2="11" y1="6" y2="6"/><line x1="21" x2="11" y1="18" y2="18"/></svg>
+
+  <svg *ngSwitchCase="'outdent'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 8 3 12 7 16"/><line x1="21" x2="11" y1="12" y2="12"/><line x1="21" x2="11" y1="6" y2="6"/><line x1="21" x2="11" y1="18" y2="18"/></svg>
+
+  <svg *ngSwitchCase="'inbox'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+
+  <svg *ngSwitchCase="'bookmark'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+
+  <svg *ngSwitchCase="'grip-vertical'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+
+  <svg *ngSwitchCase="'download'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+
+  <svg *ngSwitchCase="'file-text'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>
+
+  <svg *ngSwitchCase="'film'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="20" x="2" y="2" rx="2.18" ry="2.18"/><line x1="7" x2="7" y1="2" y2="22"/><line x1="17" x2="17" y1="2" y2="22"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="2" x2="7" y1="7" y2="7"/><line x1="2" x2="7" y1="17" y2="17"/><line x1="17" x2="22" y1="17" y2="17"/><line x1="17" x2="22" y1="7" y2="7"/></svg>
+
+  <svg *ngSwitchCase="'music'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+
+  <svg *ngSwitchCase="'image'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+
+  <!-- Fallback -->
+  <span *ngSwitchDefault [style.display]="'inline-block'" [style.width.px]="size" [style.height.px]="size"></span>
+
+</ng-container>

@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["angular:styles/component:css;5e3479853b343bb68696c39cf16be53940eb30aeb6acb80622d2575b0ec56684;/Users/sureshr/Downloads/airlift-chat/src/app/components/icon/icon.component.ts"],
+  "sourcesContent": [":host { display: inline-flex; }"],
+  "mappings": ";AAAA;AAAQ,WAAS;AAAa;",
+  "names": []
+}

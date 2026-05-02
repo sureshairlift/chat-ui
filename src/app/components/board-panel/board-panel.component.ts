@@ -1,0 +1,100 @@
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, signal } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { IconComponent } from "../icon/icon.component";
+
+/**
+ * BoardPanel — pinned messages and resources sidebar.
+ * Mirrors React `<BoardPanel>` 1:1.
+ *
+ * The original React renders a hard-coded sample (curl install snippet,
+ * "Add Resources" CTA, suggested Drive doc). We faithfully port the same
+ * static layout — in production this would be data-driven.
+ */
+@Component({
+  selector: "app-board-panel",
+  standalone: true,
+  imports: [CommonModule, IconComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { class: "block shrink-0 h-full" },
+  template: `
+    <aside [class]="asideClass" [style.width.px]="fullscreen ? null : 380">
+      <!-- Header strip -->
+      <div class="flex items-center justify-end gap-1 px-3 py-2 border-b border-gray-100">
+        <button class="px-3 py-1.5 rounded-full bg-orange-100 text-orange-900 text-[13px] font-medium flex items-center gap-1.5">
+          <app-icon name="pin" [size]="14"></app-icon>
+          Board
+        </button>
+        <button class="p-1.5 hover:bg-gray-100 rounded-full text-gray-600">
+          <app-icon name="maximize-2" [size]="16"></app-icon>
+        </button>
+        <button (click)="handleClose()" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-600">
+          <app-icon name="x" [size]="16"></app-icon>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-5 py-4 scrollable">
+        <h3 class="text-[18px] font-medium text-gray-900 mb-3">Pinned Messages</h3>
+        <div class="bg-gray-50 rounded-lg p-3 mb-5">
+          <div class="flex items-start gap-2">
+            <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-[12px]">👨‍💻</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-baseline gap-2 text-[12px]">
+                <span class="font-semibold text-gray-900">me</span>
+                <span class="text-gray-500">Jun 6, 10:29 AM</span>
+              </div>
+              <div class="text-[13px] mt-1 break-all">
+                <span class="font-mono">curl -sSL </span>
+                <a class="text-blue-600 hover:underline">
+                  https://gist.githubusercontent.com/sureshairlift/7a63968352346a3d0b8acd4b4ab9b224/raw/installer.sh
+                </a>
+                <span class="font-mono"> | sh</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h3 class="text-[18px] font-medium text-gray-900 mb-3">Pinned Resources</h3>
+        <button class="flex items-center gap-2 text-blue-700 text-[14px] font-medium mb-4">
+          <span class="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center">
+            <app-icon name="plus" [size]="12"></app-icon>
+          </span>
+          Add Resources
+        </button>
+
+        <div class="text-[12px] text-gray-500 mb-2">Resource Suggestions</div>
+        <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center gap-3 hover:border-blue-300">
+          <div class="w-8 h-8 rounded bg-red-500 text-white flex items-center justify-center text-[12px] font-medium">A</div>
+          <div class="w-8 h-8 rounded bg-blue-50 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#1a73e8">
+              <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6z"/>
+            </svg>
+          </div>
+          <div class="flex-1">
+            <div class="text-[13px] font-medium">Tariff Simulator Ad Script</div>
+            <div class="text-[11px] text-gray-500">Ashwath Airlift · Monday, Apr 6</div>
+          </div>
+          <button class="text-blue-600 hover:bg-blue-50 rounded-full p-1">
+            <app-icon name="plus" [size]="16"></app-icon>
+          </button>
+        </div>
+      </div>
+    </aside>
+  `,
+})
+export class BoardPanelComponent {
+  @Input() fullscreen = false;
+  @Output() closed = new EventEmitter<void>();
+  closing = signal(false);
+
+  get asideClass(): string {
+    const fs = this.fullscreen ? "fixed inset-0 z-50" : "shrink-0 h-full";
+    const anim = this.closing() ? "side-panel-out" : "side-panel-in";
+    return `${fs} flex flex-col border-l border-gray-200 bg-white overflow-hidden ${anim}`;
+  }
+
+  handleClose(): void {
+    if (this.closing()) return;
+    this.closing.set(true);
+    setTimeout(() => this.closed.emit(), 180);
+  }
+}

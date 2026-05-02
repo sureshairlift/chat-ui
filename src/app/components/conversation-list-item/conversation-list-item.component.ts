@@ -1,0 +1,252 @@
+import {
+  ChangeDetectionStrategy, Component, EventEmitter, HostListener,
+  Input, OnDestroy, Output, signal,
+} from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { Conversation, CustomSection } from "../../models/types";
+import { IconComponent } from "../icon/icon.component";
+import { AvatarComponent } from "../avatar/avatar.component";
+
+/**
+ * Single row in the conversation list (HomeList second pane).
+ * Mirrors React `<ConversationListItem>` 1:1.
+ *
+ * Features:
+ *  - Avatar with unread blue dot
+ *  - Pin/Calendar/AI/Customer badges next to name
+ *  - Action toolbar reveals on hover (or while expanded)
+ *  - "Summarize with AI" button if `meetingSummary` exists; toggles inline summary
+ *  - "More" menu with Mute / Pin / Mark read / Move-to-section / Hide
+ */
+@Component({
+  selector: "app-conversation-list-item",
+  standalone: true,
+  imports: [CommonModule, IconComponent, AvatarComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div [class]="rootClass">
+      <div
+        (click)="picked.emit(c.id)"
+        class="flex items-start gap-3 px-5 py-2.5 cursor-pointer hover:bg-gray-50 relative"
+      >
+        <div class="relative shrink-0">
+          <app-avatar [user]="c" [size]="36"></app-avatar>
+          <span
+            *ngIf="c.unread"
+            class="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-blue-600 ring-2 ring-white"
+            title="Unread"
+          ></span>
+        </div>
+
+        <div class="flex-1 min-w-0 pr-2">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span [class]="nameClass">{{ c.name }}</span>
+            <app-icon *ngIf="c.pinned" name="pin" [size]="11" class="text-gray-500 shrink-0"></app-icon>
+            <app-icon *ngIf="c.isCalendar" name="calendar" [size]="12" class="text-gray-500 shrink-0"></app-icon>
+            <span *ngIf="c.isAI"
+                  class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 text-purple-700">
+              AI
+            </span>
+            <app-icon *ngIf="c.isExternal && c.type === 'external'"
+                      name="globe" [size]="11" class="text-amber-600 shrink-0"></app-icon>
+            <span *ngIf="c.isExternal && c.type === 'external-group'"
+                  class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1 shrink-0">
+              <app-icon name="users" [size]="9"></app-icon>
+              {{ c.members }}
+            </span>
+          </div>
+
+          <div [class]="snippetClass">
+            <span *ngIf="c.isExternal && c.org && !expanded && c.type === 'external'"
+                  class="text-amber-700 mr-1">
+              {{ c.org }} ·
+            </span>
+            <ng-container *ngIf="c.lastSnippet; else empty">{{ c.lastSnippet }}</ng-container>
+            <ng-template #empty><span class="italic text-gray-400">No messages yet</span></ng-template>
+          </div>
+        </div>
+
+        <!-- Right side: timestamp (default) OR action icons (hover/expanded) -->
+        <div class="shrink-0 flex items-center" (click)="$event.stopPropagation()">
+          <span [class]="'text-[11px] text-gray-500 ' + (expanded ? 'hidden' : 'group-hover:hidden')">
+            {{ c.lastTime }}
+          </span>
+
+          <div [class]="'items-center gap-0.5 ' + (expanded ? 'flex' : 'hidden group-hover:flex')">
+            <button *ngIf="hasSummary"
+                    (click)="$event.stopPropagation(); toggleSummary.emit(c.id)"
+                    [title]="expanded ? 'Hide summary' : 'Summarize with AI'"
+                    [class]="summaryBtnClass">
+              <app-icon [name]="expanded ? 'chevron-down' : 'sparkles'" [size]="14"></app-icon>
+            </button>
+            <button (click)="$event.stopPropagation()"
+                    title="Open in thread"
+                    class="h-7 w-7 rounded-full flex items-center justify-center hover:bg-gray-100 text-gray-700 relative">
+              <app-icon name="message-square" [size]="14"></app-icon>
+              <span class="absolute top-1 right-1 h-1.5 w-1.5 bg-gray-900 rounded-full"></span>
+            </button>
+            <div class="relative">
+              <button (click)="$event.stopPropagation(); toggleMenu()"
+                      title="More"
+                      class="h-7 w-7 rounded-full flex items-center justify-center hover:bg-gray-100 text-gray-700">
+                <app-icon name="more-horizontal" [size]="14"></app-icon>
+              </button>
+              <div *ngIf="menuOpen()"
+                   (click)="$event.stopPropagation()"
+                   class="absolute right-0 top-8 z-30 w-56 bg-white rounded-lg shadow-lg ring-1 ring-gray-200 py-1 text-[13px]">
+                <button class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
+                  <app-icon name="bell" [size]="14"></app-icon> Mute
+                </button>
+                <button class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
+                  <app-icon name="pin" [size]="14"></app-icon> Pin chat
+                </button>
+                <button class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
+                  <app-icon name="check-circle-2" [size]="14"></app-icon> Mark as read
+                </button>
+
+                <ng-container *ngIf="customSections && customSections.length > 0">
+                  <div class="h-px bg-gray-100 my-1"></div>
+                  <div class="px-3 py-1 text-[11px] font-medium text-gray-500 uppercase tracking-wider">
+                    Move to section
+                  </div>
+                  <button *ngFor="let s of customSections"
+                          (click)="moveToSection(s.id)"
+                          [class]="'w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 ' +
+                            (c.section === s.id ? 'text-blue-700 bg-blue-50/50' : '')">
+                    <span [class]="'w-4 h-4 rounded flex items-center justify-center ' + s.color">
+                      <app-icon name="hash" [size]="10" class="text-white"></app-icon>
+                    </span>
+                    {{ s.label }}
+                    <app-icon *ngIf="c.section === s.id" name="check-circle-2" [size]="12" class="ml-auto text-blue-600"></app-icon>
+                  </button>
+                  <button *ngIf="isInCustomSection()"
+                          (click)="moveToSection(null)"
+                          class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 text-gray-600">
+                    <app-icon name="arrow-left" [size]="14"></app-icon>
+                    Remove from section
+                  </button>
+                </ng-container>
+
+                <div class="h-px bg-gray-100 my-1"></div>
+                <button class="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-red-600 flex items-center gap-2">
+                  <app-icon name="x" [size]="14"></app-icon> Hide conversation
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inline AI summary expansion -->
+      <div *ngIf="expanded && hasSummary"
+           class="px-5 pb-3"
+           (click)="$event.stopPropagation()">
+        <div class="rounded-2xl bg-white border border-gray-200 p-4 shadow-sm">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="h-6 w-6 rounded-md bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center">
+              <app-icon name="sparkles" [size]="12" class="text-white"></app-icon>
+            </div>
+            <span class="text-[14px] font-semibold text-gray-900">Summary</span>
+          </div>
+          <ul class="space-y-2.5 pl-1">
+            <li *ngFor="let item of c.meetingSummary"
+                class="flex gap-3 text-[13px] text-gray-800 leading-relaxed">
+              <span class="text-gray-400 mt-1 shrink-0">•</span>
+              <span>{{ item }}</span>
+            </li>
+          </ul>
+          <div class="mt-3 pt-3 border-t border-gray-100 flex items-center gap-1">
+            <button
+              (click)="setFeedback('up')"
+              [class]="'h-7 w-7 rounded-full flex items-center justify-center transition ' +
+                (feedback() === 'up' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-600')"
+            >
+              <app-icon name="thumbs-up" [size]="14"></app-icon>
+            </button>
+            <button
+              (click)="setFeedback('down')"
+              [class]="'h-7 w-7 rounded-full flex items-center justify-center transition ' +
+                (feedback() === 'down' ? 'bg-rose-100 text-rose-700' : 'hover:bg-gray-100 text-gray-600')"
+            >
+              <app-icon name="thumbs-down" [size]="14"></app-icon>
+            </button>
+            <span class="text-[11px] text-gray-500 ml-auto">Generated by Airlift Intelligence</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+})
+export class ConversationListItemComponent implements OnDestroy {
+  @Input({ required: true }) c!: Conversation;
+  @Input() isActive = false;
+  @Input() expanded = false;
+  @Input() customSections: CustomSection[] = [];
+  @Output() picked = new EventEmitter<string>();
+  @Output() toggleSummary = new EventEmitter<string>();
+  @Output() moveSection = new EventEmitter<{ id: string; section: string | null }>();
+
+  feedback = signal<"up" | "down" | null>(null);
+  menuOpen = signal(false);
+  private offClick: ((e: MouseEvent) => void) | null = null;
+
+  get hasSummary(): boolean { return !!this.c.meetingSummary; }
+
+  get rootClass(): string {
+    const base = "group";
+    const active = this.isActive ? "bg-blue-50/60" : "";
+    const exp = this.expanded ? "bg-blue-50/40" : "";
+    return `${base} ${active} ${exp}`;
+  }
+
+  get nameClass(): string {
+    return this.c.unread
+      ? "text-[14px] truncate font-semibold text-gray-900"
+      : "text-[14px] truncate font-medium text-gray-900";
+  }
+
+  get snippetClass(): string {
+    const base = "text-[13px] truncate mt-0.5";
+    if (this.expanded) return `${base} italic text-gray-700`;
+    if (this.c.unread) return `${base} text-gray-800 font-medium`;
+    return `${base} text-gray-600`;
+  }
+
+  get summaryBtnClass(): string {
+    const base = "h-7 w-7 rounded-full flex items-center justify-center transition";
+    if (this.expanded) return `${base} bg-white shadow-sm text-gray-700 hover:bg-gray-50`;
+    return `${base} bg-white shadow-sm text-purple-700 hover:bg-purple-50 ring-1 ring-gray-200`;
+  }
+
+  setFeedback(v: "up" | "down"): void {
+    this.feedback.set(this.feedback() === v ? null : v);
+  }
+
+  toggleMenu(): void {
+    const next = !this.menuOpen();
+    this.menuOpen.set(next);
+    // Outside-click handler
+    if (next) {
+      setTimeout(() => {
+        this.offClick = (e: MouseEvent) => this.menuOpen.set(false);
+        document.addEventListener("click", this.offClick);
+      }, 0);
+    } else if (this.offClick) {
+      document.removeEventListener("click", this.offClick);
+      this.offClick = null;
+    }
+  }
+
+  moveToSection(secId: string | null): void {
+    this.moveSection.emit({ id: this.c.id, section: secId });
+    this.menuOpen.set(false);
+  }
+
+  isInCustomSection(): boolean {
+    return this.customSections?.some((s) => s.id === this.c.section) ?? false;
+  }
+
+  ngOnDestroy(): void {
+    if (this.offClick) document.removeEventListener("click", this.offClick);
+  }
+}
