@@ -132,7 +132,11 @@ export class StarredViewComponent {
   });
 
   onUnsave(msgId: string): void {
-    this.state.toggleSave(msgId);
+    if (this.state.live()) {
+      void this.state.toggleSaveLive(msgId);
+    } else {
+      this.state.toggleSave(msgId);
+    }
     this.toast.show("Removed from saved");
   }
 }

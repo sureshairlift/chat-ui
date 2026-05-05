@@ -62,18 +62,6 @@
               </div>
             </div>
 
-            <!-- On-duty pill -->
-            <button
-              class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[12px] font-medium ring-1 ring-emerald-200 hover:bg-emerald-100 transition shrink-0"
-              title="Change availability">
-              <span class="relative flex">
-                <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
-                <span class="absolute inset-0 h-2 w-2 rounded-full bg-emerald-500 animate-ping opacity-50"></span>
-              </span>
-              On duty
-              <app-icon name="chevron-down" [size]="11" class="opacity-60"></app-icon>
-            </button>
-
             <!-- Role switcher -->
             <button *ngIf="enableRoleSwitch" (click)="onChangeRole()"
               class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-50 text-gray-600 text-[12px] ring-1 ring-gray-200 hover:bg-gray-100 transition shrink-0"
@@ -143,6 +131,68 @@
             </ng-template>
           </div>
 
+          <!-- ============== LIVE STRIP (chat-service data) ==============
+               Surfaces backend numbers regardless of which role the
+               page is rendered in. Hidden in offline/demo mode where
+               the live signals stay null. -->
+          <div *ngIf="state.live()"
+               class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 px-1">
+            <app-kpi-card label="In queue" [value]="liveAwaitingHandoff().length"
+              [tone]="liveAwaitingHandoff().length > 0 ? 'red' : 'gray'"
+              [pulse]="liveAwaitingHandoff().length > 0"
+              [hint]="liveQueueWaitMinutes().median > 0
+                ? ('Median wait ' + liveQueueWaitMinutes().median + 'm')
+                : 'Nothing waiting'">
+              <app-icon name="bell" [size]="14"></app-icon>
+            </app-kpi-card>
+
+            <app-kpi-card label="Claimed" [value]="liveClaimedHandoff().length"
+              [tone]="liveClaimedHandoff().length > 0 ? 'amber' : 'gray'"
+              [hint]="liveClaimedHandoff().length > 0 ? 'Active conversations' : 'None right now'">
+              <app-icon name="users" [size]="14"></app-icon>
+            </app-kpi-card>
+
+            <app-kpi-card label="Channels w/ unread" [value]="liveUnreadChannels()"
+              [tone]="liveUnreadChannels() > 0 ? 'blue' : 'gray'"
+              [hint]="liveTotalUnread() + ' unread message' + (liveTotalUnread() === 1 ? '' : 's')">
+              <app-icon name="inbox" [size]="14"></app-icon>
+            </app-kpi-card>
+
+            <app-kpi-card label="Saved" [value]="liveSavedCount()"
+              [tone]="liveSavedCount() > 0 ? 'violet' : 'gray'"
+              [hint]="liveSavedCount() > 0 ? 'Bookmarked messages' : 'No saved messages'">
+              <app-icon name="bookmark" [size]="14"></app-icon>
+            </app-kpi-card>
+          </div>
+
+          <!-- Resolved-today badge + channel-mix chips. Sits between the
+               live KPI strip and the original 'today' strip so the agent
+               sees a quick activity snapshot. -->
+          <div *ngIf="state.live()"
+               class="mt-3 flex items-center gap-2 px-1 text-[12px] text-gray-600 flex-wrap">
+            <span *ngIf="liveResolvedToday().length > 0"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+              <app-icon name="check-circle-2" [size]="12"></app-icon>
+              {{ liveResolvedToday().length }} resolved today
+            </span>
+            <span *ngIf="channelMix().direct > 0"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 ring-1 ring-gray-200">
+              {{ channelMix().direct }} direct
+            </span>
+            <span *ngIf="channelMix().space > 0"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 ring-1 ring-gray-200">
+              {{ channelMix().space }} spaces
+            </span>
+            <span *ngIf="channelMix().customer + channelMix().external_group > 0"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+              {{ channelMix().customer + channelMix().external_group }} customer
+            </span>
+            <span *ngIf="channelMix().ai > 0"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-200">
+              {{ channelMix().ai }} AI
+            </span>
+          </div>
+
           <!-- ============== TODAY STRIP ============== -->
           <div class="mt-3 flex items-center gap-3 sm:gap-4 px-1 text-[12px] text-gray-600 flex-wrap">
             <span class="text-[11px] font-bold uppercase tracking-wider text-gray-500">Today</span>
@@ -204,7 +254,15 @@
       <div class="flex-1 overflow-y-auto scrollable">
         <div class="max-w-[920px] mx-auto px-4 sm:px-6 py-5 space-y-5">
 
-          <!-- URGENT QUEUE -->
+          <!-- LIVE HANDOFF QUEUE — visible only when chat-state is wired
+               to the real backend. The component does its own loading +
+               FCM-driven refresh; the dashboard just hosts it. -->
+          <div *ngIf="state.live() && canHandleCustomerHandoffs" style="scroll-margin-top: 16px;">
+            <app-handoff-queue></app-handoff-queue>
+          </div>
+
+          <!-- URGENT QUEUE (legacy mock-data — only renders when there
+               are pending portal sessions in the demo seed). -->
           <div #urgentRef *ngIf="awaitingHandoff().length > 0" style="scroll-margin-top: 16px;">
             <app-dash-section title="Urgent · Awaiting takeover" [count]="awaitingHandoff().length" accent="red"
               subtitle="Customers who asked for a human and are still on AI">

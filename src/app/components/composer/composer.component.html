@@ -40,13 +40,45 @@
           </button>
         </div>
 
+        <!-- Pending attachment chips — render above the editor so the
+             user can see what's queued for the next send. Each chip
+             has an X to remove. The container animates the empty state
+             out via *ngIf so it doesn't take vertical space when there
+             are no attachments. -->
+        <div *ngIf="pendingAttachments().length > 0" class="px-4 pt-3 flex flex-wrap gap-2">
+          <div *ngFor="let a of pendingAttachments(); let i = index"
+               class="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50 ring-1 ring-gray-200 text-[12px] max-w-xs">
+            <app-icon
+              [name]="a.kind === 'image' ? 'image' : a.kind === 'video' ? 'video' : a.kind === 'audio' ? 'mic' : 'file'"
+              [size]="14" class="text-gray-500 shrink-0"></app-icon>
+            <span class="truncate text-gray-800">{{ a.filename }}</span>
+            <span *ngIf="a.size" class="text-gray-400 shrink-0">{{ formatBytes(a.size) }}</span>
+            <button type="button" (click)="removePendingAttachment(i)"
+                    class="ml-0.5 w-4 h-4 inline-flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-500 shrink-0"
+                    title="Remove">
+              <app-icon name="x" [size]="10"></app-icon>
+            </button>
+          </div>
+          <span *ngIf="uploading()" class="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+            <span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+            Uploading...
+          </span>
+        </div>
+
+        <!-- Hidden file input — opened by the toolbar's Attach button.
+             multiple lets the user pick more than one at once; accept="*"
+             so any type goes through (server kindForMime decides the
+             kind label). -->
+        <input #fileInput type="file" multiple class="hidden"
+               (change)="onFilesPicked($event)" />
+
         <!-- Editable area -->
         <div class="relative px-4 pt-3 pb-1">
           <div #editor contenteditable="true" (input)="updateState()" (keydown)="handleKeyDown($event)"
             (mouseup)="updateState()" (keyup)="updateState()" (focus)="onFocus()" (blur)="onBlur()"
             class="composer-editor min-h-[40px] max-h-[200px] overflow-y-auto outline-none text-[14px] text-gray-900 leading-relaxed"
             style="word-break: break-word;"></div>
-          <div *ngIf="isEmpty() && !isFocused()"
+          <div *ngIf="isEmpty() && !isFocused() && pendingAttachments().length === 0"
             class="absolute top-3 left-4 text-[14px] text-gray-400 pointer-events-none select-none">
             Type a message...&nbsp;
             <span class="text-[12px] text-gray-300">— try &#64; to mention</span>
@@ -167,6 +199,36 @@
               <div *ngIf="u.org" class="text-[11px] text-gray-500 truncate">{{ u.org }}</div>
             </div>
             <span *ngIf="m.index === i" class="text-[10px] text-blue-600 font-medium">↵</span>
+          </button>
+        </div>
+
+        <!-- Slash command autocomplete — opens when the editor's first
+             non-whitespace token is `/<word?>`. Mirrors the mention
+             popover's geometry / arrow-key navigation. Each row shows
+             the command label, a one-line hint, and a kbd-style ↵
+             marker on the active row. -->
+        <div *ngIf="slash() as s" [class.hidden]="filteredSlashCommands().length === 0"
+          (mousedown)="$event.preventDefault()"
+          class="fixed z-50 bg-white rounded-lg shadow-xl ring-1 ring-gray-200 py-1 w-80 max-h-72 overflow-y-auto scrollable"
+          [style.top.px]="slashTop(s)" [style.left.px]="slashLeft(s)">
+          <div
+            class="px-3 py-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+            <span>Commands</span>
+            <span class="text-gray-400 normal-case font-normal text-[10px]">↑↓ Enter</span>
+          </div>
+          <button *ngFor="let c of filteredSlashCommands(); let i = index"
+            (mousedown)="$event.preventDefault()"
+            (click)="insertSlashCommand(c)"
+            [class]="'w-full flex items-start gap-2 px-3 py-1.5 text-left ' +
+              (s.index === i ? 'bg-blue-50' : 'hover:bg-gray-50')">
+            <span class="w-6 h-6 shrink-0 rounded-md bg-gray-100 flex items-center justify-center mt-0.5">
+              <app-icon [name]="c.icon" [size]="13" class="text-gray-600"></app-icon>
+            </span>
+            <div class="flex-1 min-w-0">
+              <div class="text-[13px] font-mono text-gray-900 truncate">{{ c.label }}</div>
+              <div class="text-[11px] text-gray-500 truncate">{{ c.hint }}</div>
+            </div>
+            <span *ngIf="s.index === i" class="text-[10px] text-blue-600 font-medium mt-1">↵</span>
           </button>
         </div>
       </div>

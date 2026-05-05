@@ -30,14 +30,25 @@
             </app-icon>
           </button>
 
-          <!-- Subtitle -->
-          <div *ngIf="conv.type === 'space' && !isMobile" class="text-[12px] text-gray-500 truncate">
-            {{ conv.members }} members · {{ conv.org }}
+          <!-- Subtitle (groups & spaces) — text + inline avatar pile in
+               a single row. The pile-only template fragment lives at the
+               bottom of this block; we render it inline here when the
+               channel is a group so it shares the line with the member
+               count rather than wrapping below. -->
+          <div *ngIf="conv.type === 'space' && !isMobile"
+               class="text-[12px] text-gray-500 flex items-center gap-2 min-w-0">
+            <span class="truncate">
+              {{ liveMemberCount }} members<span *ngIf="conv.org"> · {{ conv.org }}</span>
+            </span>
+            <ng-container *ngTemplateOutlet="memberPileTpl"></ng-container>
           </div>
           <div *ngIf="conv.type === 'external-group' && !isMobile"
-            class="text-[12px] text-amber-700 flex items-center gap-1 truncate">
-            <app-icon name="users" [size]="11"></app-icon>
-            {{ conv.members }} members · {{ conv.org }}
+               class="text-[12px] text-amber-700 flex items-center gap-2 min-w-0">
+            <app-icon name="users" [size]="11" class="shrink-0"></app-icon>
+            <span class="truncate">
+              {{ liveMemberCount }} members<span *ngIf="conv.org"> · {{ conv.org }}</span>
+            </span>
+            <ng-container *ngTemplateOutlet="memberPileTpl"></ng-container>
           </div>
           <div *ngIf="conv.isExternal && conv.type === 'external' && !isMobile"
             class="text-[12px] text-amber-700 flex items-center gap-1 truncate">
@@ -48,6 +59,67 @@
             <app-icon name="sparkles" [size]="10"></app-icon>
             Powered by Airlift Intelligence
           </div>
+
+          <!-- Active handoff banner — shown when this channel has an
+               open queue request. "Claimed by X" tells other agents
+               not to take over; "Awaiting agent" is the urgency pill
+               while still pending. Pills sit inline on the subtitle row
+               so they don't add extra vertical space. -->
+          <div *ngIf="handoffNotice.kind === 'pending'"
+               class="mt-1 inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+            {{ handoffNotice.label }}
+          </div>
+          <div *ngIf="handoffNotice.kind === 'claimed'"
+               class="mt-1 inline-flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+            <app-icon name="check" [size]="9"></app-icon>
+            {{ handoffNotice.label }}
+          </div>
+
+          <!-- 1:1 chats: presence dot + last-activity. The dot pulses
+               green when active (within the last minute) and silently
+               sits gray otherwise — the colored ring + label give a
+               subtle, calm read-out vs the loud "online now!" pattern. -->
+          <div *ngIf="isDirectChat && !isMobile"
+               class="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1.5">
+            <span *ngIf="lastActivityLabel"
+                  [class]="'inline-block w-1.5 h-1.5 rounded-full ' + (lastActivityLabel === 'Active now' ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300')"></span>
+            <span class="truncate">{{ lastActivityLabel || 'Direct message' }}</span>
+          </div>
+
+          <!-- Standalone avatar pile — used for groups WITHOUT a text
+               subtitle (group_dm, ai_assisted, bot_channel). The pile-
+               sharing-a-line case is handled via *ngTemplateOutlet
+               above for space / external-group. -->
+          <div *ngIf="!isDirectChat && conv.type !== 'space' && conv.type !== 'external-group' && memberPile.length > 0 && !isMobile"
+               class="mt-0.5 flex items-center gap-2">
+            <ng-container *ngTemplateOutlet="memberPileTpl"></ng-container>
+          </div>
+
+          <!-- Reusable pile template — small overlapping avatars + the
+               "+N" overflow as a subtle pill. Each avatar lifts on hover
+               so the user can pick out who's who without needing a real
+               click affordance. The "+N" pill matches the avatar height
+               for visual rhythm. Inlined into subtitles via
+               *ngTemplateOutlet so the same markup serves the
+               text-with-pile and pile-only cases. -->
+          <ng-template #memberPileTpl>
+            <span *ngIf="memberPile.length > 0" class="flex items-center gap-1.5 shrink-0">
+              <span class="flex items-center -space-x-1">
+                <ng-container *ngFor="let m of memberPile">
+                  <span *ngIf="senderForRef(m.user_ref) as s"
+                        [title]="s.name"
+                        [class]="'inline-flex items-center justify-center w-[18px] h-[18px] rounded-full text-[9px] font-semibold leading-none cursor-default transition-transform hover:scale-110 hover:z-10 ' + s.color + (s.color.includes('text-') ? '' : ' text-white')">
+                    {{ s.initials }}
+                  </span>
+                </ng-container>
+              </span>
+              <span *ngIf="liveMemberCount > memberPile.length"
+                    class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-gray-100 text-gray-600 text-[10px] font-medium leading-none">
+                +{{ liveMemberCount - memberPile.length }}
+              </span>
+            </span>
+          </ng-template>
 
           <!-- Header dropdown -->
           <div *ngIf="showHeaderMenu()"
@@ -163,6 +235,41 @@
             </button>
           </div>
         </div>
+
+        <!-- Phase-aware controls (live channels only). Renders just before
+             the Close button so it sits at the right edge of the header
+             where users naturally look for primary actions. -->
+        <ng-container *ngIf="phaseControlsVisible">
+          <!-- Take over is only meaningful on a customer chat where the
+               customer asked for a human (phase == handoff_pending). On a
+               quiet ai_only customer chat there's nothing to take over,
+               and on the operator's own ai_direct assistant there's no
+               customer at all. canTakeOver enforces both. -->
+          <button *ngIf="canTakeOver"
+                  (click)="onTakeOver()"
+                  class="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 ml-1"
+                  title="Claim this handoff">
+            Take over
+          </button>
+          <button *ngIf="phase === 'human_active' || phase === 'ai_assist'"
+                  (click)="onReturnToAI()"
+                  class="text-xs px-3 py-1.5 rounded bg-gray-100 text-gray-800 hover:bg-gray-200 ml-1"
+                  title="Hand back to AI">
+            Return to AI
+          </button>
+          <button *ngIf="phase === 'human_active' || phase === 'ai_assist'"
+                  (click)="onResolveChannel()"
+                  class="text-xs px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 ml-1"
+                  title="Mark resolved">
+            Resolve
+          </button>
+          <button *ngIf="phase === 'resolved'"
+                  (click)="onReturnToAI()"
+                  class="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 ml-1"
+                  title="Re-open conversation">
+            Re-open
+          </button>
+        </ng-container>
 
         <button *ngIf="splitPane" (click)="close.emit()"
           class="w-9 h-9 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-700"

@@ -1,6 +1,6 @@
 import {
-  ChangeDetectionStrategy, Component, EventEmitter, Input, Output,
-  computed, inject, signal,
+  ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output,
+  SimpleChanges, computed, inject, signal,
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
@@ -78,7 +78,7 @@ import { AvatarComponent } from "../avatar/avatar.component";
     </aside>
   `,
 })
-export class PinnedPanelComponent {
+export class PinnedPanelComponent implements OnChanges {
   state = inject(ChatStateService);
 
   @Input() conv: Conversation | null = null;
@@ -93,6 +93,16 @@ export class PinnedPanelComponent {
     const msgs = this.state.messagesByConv()[this.conv.id] || [];
     return msgs.filter((m) => ids.includes(m.id));
   });
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // Live mode: pull the canonical pinned list from the backend whenever
+    // the panel is bound to a (different) conversation. Without this the
+    // panel would only show messages pinned this session — a fresh load
+    // wouldn't see what other members pinned earlier.
+    if (changes["conv"] && this.conv && this.state.live()) {
+      void this.state.loadPinnedLive(this.conv.id);
+    }
+  }
 
   senderFor(id?: string): Sender | null {
     return id ? (SENDERS[id] || null) : null;
@@ -111,7 +121,11 @@ export class PinnedPanelComponent {
 
   onUnpin(msgId: string): void {
     if (!this.conv) return;
-    this.state.unpin(this.conv.id, msgId);
+    if (this.state.live()) {
+      void this.state.togglePinLive(this.conv.id, msgId);
+    } else {
+      this.state.unpin(this.conv.id, msgId);
+    }
   }
 
   handleClose(): void {

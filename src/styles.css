@@ -15,6 +15,103 @@ html, body {
 
 * { box-sizing: border-box; }
 
+/* ngx-markdown output styling. The block-renderer wraps each text/markdown
+ * block in `.prose prose-sm`, but @tailwindcss/typography isn't installed
+ * (kept the bundle lean). These rules cover the elements the AI summary
+ * actually emits — paragraphs, lists, inline emphasis, and the occasional
+ * stray markdown table — without dragging in the full plugin. */
+.prose p { margin: 0 0 0.5rem; line-height: 1.5; }
+.prose p:last-child { margin-bottom: 0; }
+.prose strong { font-weight: 600; color: inherit; }
+.prose em { font-style: italic; }
+.prose code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+.prose pre {
+  background: #f3f4f6;
+  padding: 0.75rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.85em;
+  margin: 0.5rem 0;
+}
+.prose pre code { background: transparent; padding: 0; }
+.prose ul, .prose ol { margin: 0.25rem 0 0.5rem; padding-left: 1.25rem; }
+.prose li { margin: 0.15rem 0; }
+.prose a { color: #2563eb; text-decoration: underline; }
+.prose a:hover { text-decoration: none; }
+.prose blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 0.75rem;
+  color: #4b5563;
+  margin: 0.5rem 0;
+}
+/* Markdown tables: the LLM occasionally emits one despite the prompt
+ * asking it not to (the structured table block already shows the data).
+ * Keep it readable rather than the unstyled rows you saw. */
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85em;
+  margin: 0.5rem 0;
+}
+.prose table th,
+.prose table td {
+  border: 1px solid #e5e7eb;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.prose table th { background: #f9fafb; font-weight: 600; }
+.prose table tr:nth-child(even) td { background: #fafafa; }
+
+/* Message-body horizontal scroll. When the bubble's HTML/markdown
+ * content has a child that resists wrapping (long URL with no
+ * breakpoints, <pre>, wide <table>, oversized <img>), this wrapper
+ * adds a horizontal scrollbar instead of letting the bubble blow
+ * out the column width.
+ *
+ * - overflow-x: auto    → scrollbar only when needed
+ * - max-width: 100%     → never wider than the bubble's column
+ * - overscroll-behavior → mouse-wheel horizontal panning doesn't
+ *   bleed into a parent vertical scroll on macOS / trackpads
+ * - tiny scrollbar styling so the bar isn't visually heavy
+ */
+.message-body-scroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.message-body-scroll::-webkit-scrollbar { height: 6px; }
+.message-body-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+.message-body-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.message-body-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Wide elements inside the bubble — keep them within the scroll
+ * container so they actually trigger horizontal scroll instead of
+ * being clipped or pushing the layout. */
+.message-body-scroll img,
+.message-body-scroll video {
+  max-width: 100%;
+  height: auto;
+}
+.message-body-scroll pre {
+  white-space: pre;     /* don't collapse — the user wants to see code as-is */
+  max-width: none;      /* let it grow; the container scrolls */
+}
+.message-body-scroll table {
+  min-width: max-content;  /* horizontal scroll if columns exceed bubble width */
+  border-collapse: collapse;
+}
+
 /* Mention chip used inside HTML message bodies and the composer editor */
 .mention-chip,
 .composer-editor .mention-chip,

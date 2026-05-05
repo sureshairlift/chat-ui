@@ -78,7 +78,8 @@ export class ConvPopupComponent implements AfterViewInit, AfterViewChecked, OnCh
     const groups: DayGroup[] = [];
     let lastKey: string | null = null;
     for (const m of slice) {
-      const key = getDayKey(m.time);
+      const iso = (m as { api?: { created_on?: string } })?.api?.created_on;
+      const key = getDayKey(m.time, iso);
       if (key !== lastKey) {
         groups.push({ key, label: formatDayLabel(key), messages: [] });
         lastKey = key;
@@ -234,13 +235,29 @@ export class ConvPopupComponent implements AfterViewInit, AfterViewChecked, OnCh
 
   onSend(payload: { html: string; text: string }): void {
     if (!this.conv) return;
-    const id = `m-${Date.now()}`;
     const stripped = payload.html.replace(/<[^>]+>/g, "").trim();
+    const isRich = stripped !== payload.text
+      || /<(strong|em|u|s|code|ul|ol|li|table|h[1-3]|blockquote|span|a)\b/i.test(payload.html);
+
+    // Live mode: round-trip through chat-service so the message lands
+    // in the channel for every member, FCM fans out, and the popup
+    // shares persistence with the main pane (no fork between the two
+    // surfaces). Mock fallback below covers the offline demo path.
+    if (this.state.live()) {
+      void this.state.sendMessageLive(this.convId, {
+        content: isRich ? payload.html : payload.text,
+        content_format: isRich ? "markdown" : "text",
+        client_message_id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      });
+      this.state.clearDraft(this.convId);
+      setTimeout(() => this.scrollToBottom(), 0);
+      return;
+    }
+
+    const id = `m-${Date.now()}`;
     const msg: Message = {
       id, sender: "me", time: "now",
-      ...(stripped !== payload.text || /<(strong|em|u|s|code|ul|ol|li|table|h[1-3]|blockquote|span|a)\b/i.test(payload.html)
-        ? { html: payload.html }
-        : { text: payload.text }),
+      ...(isRich ? { html: payload.html } : { text: payload.text }),
     };
     this.state.appendMessage(this.convId, msg);
     this.state.clearDraft(this.convId);

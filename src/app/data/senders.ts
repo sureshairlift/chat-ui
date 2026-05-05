@@ -27,3 +27,77 @@ export interface MentionableUser extends Sender { id: string; }
 export const MENTIONABLE_USERS: MentionableUser[] = Object.entries(SENDERS)
   .filter(([id]) => id !== "me" && id !== "airliftai")
   .map(([id, s]) => ({ id, ...s }));
+
+/* ================================================================
+ *  Live-data alias layer
+ * ================================================================
+ *
+ * The backend emits namespaced user_refs (op:2, ext:101, bot:ai) but
+ * many components still look up senders via the legacy mock keys
+ * (SENDERS["shiron"], SENDERS["sunil"], etc.). To avoid refactoring
+ * ~10 components in one go, we mirror every Sender record under its
+ * matching user_ref. Mapping mirrors `nameByRef` in the seed program
+ * (apps/chat-service/migrations/seed/main.go) — keep both in sync.
+ *
+ * After this loop, SENDERS["op:18"] === SENDERS["sunil"] and the
+ * existing avatar / name lookups work for live messages too.
+ */
+const REF_TO_LEGACY_ID: Record<string, string> = {
+  "op:2":   "me",
+  "op:10":  "shiron",
+  "op:11":  "arvindh",
+  "op:12":  "ashwath",
+  "op:13":  "ram",
+  "op:14":  "simi",
+  "op:15":  "aatif",
+  "op:16":  "rajkumar",
+  "op:17":  "anand",
+  "op:18":  "sunil",
+  "bot:ai": "airliftai",
+  "ext:101": "acme_jane",
+  "ext:102": "lighthouse_marc",
+  "ext:103": "northstar_priya",
+  "ext:104": "riverstone_tom",
+};
+
+for (const [ref, legacyId] of Object.entries(REF_TO_LEGACY_ID)) {
+  const s = SENDERS[legacyId];
+  if (s && !SENDERS[ref]) {
+    SENDERS[ref] = s;
+  }
+}
+
+/** Public lookup: human-readable name for any user_ref. Falls back to
+ *  the ref string when no record exists (graceful for unknown senders).
+ *  Components that need richer data (color, initials, org) should look
+ *  up SENDERS[ref] directly — this loop guarantees the lookup succeeds
+ *  for every seeded user_ref. */
+export function nameForRef(ref: string): string {
+  return SENDERS[ref]?.name ?? ref;
+}
+
+/** Register a new user_ref → Sender record at runtime. Called by the
+ *  live-data adapter when a message arrives from a sender we haven't
+ *  seen before — guarantees subsequent lookups succeed without a
+ *  network roundtrip. Idempotent. */
+export function registerLiveSender(ref: string, name: string): void {
+  if (SENDERS[ref]) return;
+  // Build a default Sender record. Color is deterministic from the ref
+  // so the same user always renders the same avatar tint across reloads.
+  const palette = [
+    "bg-emerald-500", "bg-sky-500", "bg-violet-500", "bg-amber-500",
+    "bg-rose-500", "bg-teal-500", "bg-indigo-500", "bg-fuchsia-500",
+  ];
+  let h = 0;
+  for (let i = 0; i < ref.length; i++) h = (h * 31 + ref.charCodeAt(i)) >>> 0;
+  const color = palette[h % palette.length];
+  const initials = nameToInitials(name || ref);
+  SENDERS[ref] = { name: name || ref, color, initials };
+}
+
+function nameToInitials(s: string): string {
+  const parts = s.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}

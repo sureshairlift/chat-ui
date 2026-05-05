@@ -5,6 +5,8 @@ import {
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
+import { LiveDataService } from "../../services/live-data.service";
+import { ToastService } from "../../services/toast.service";
 import { MENTIONABLE_USERS, MentionableUser } from "../../data/senders";
 
 import { IconComponent } from "../icon/icon.component";
@@ -23,6 +25,47 @@ interface MentionState {
   rect: { left: number; bottom: number; top: number };
   index: number;
 }
+
+/** A successfully-uploaded attachment waiting to be attached to the
+ *  next message send. The composer holds these in `pendingAttachments`
+ *  until the user clicks Send (then they're forwarded in the send
+ *  payload + cleared) or clicks the X (then the local entry drops —
+ *  the file stays on the server, harmlessly). */
+export interface PendingAttachment {
+  kind: 'file' | 'image' | 'video' | 'audio';
+  url: string;
+  filename: string;
+  size?: number;
+  mime?: string;
+}
+
+/** Slash-command popover state. Same shape as MentionState (query +
+ *  cursor position + selected index) so the template can mirror the
+ *  mention popover layout. Driven by detectSlash(). */
+interface SlashState {
+  query: string;
+  rect: { left: number; bottom: number; top: number };
+  index: number;
+}
+
+/** Catalog of recognized slash commands. Filtered by query as the user
+ *  types after `/`. Each entry maps to the routing in
+ *  AppComponent.onSlashCommand — keep them in sync. */
+interface SlashCommandEntry {
+  command: string;     // canonical name (no leading slash)
+  label: string;       // user-facing pretty form ("/handoff")
+  hint: string;        // one-line description
+  icon: string;        // icon name from IconComponent
+}
+
+const SLASH_COMMANDS: SlashCommandEntry[] = [
+  { command: 'handoff',       label: '/handoff [reason]', hint: 'Bring in the support team',                icon: 'user-plus' },
+  { command: 'take-over',     label: '/take-over',         hint: 'Claim this conversation as agent',         icon: 'check' },
+  { command: 'return-to-ai',  label: '/return-to-ai',      hint: 'Hand control back to AI',                  icon: 'sparkles' },
+  { command: 'resolve',       label: '/resolve',           hint: 'Mark conversation resolved',               icon: 'check-circle-2' },
+  { command: 'note',          label: '/note <message>',    hint: 'Send an agents-only internal note',        icon: 'lock' },
+  { command: 'help',          label: '/help',              hint: 'Show available commands',                  icon: 'info' },
+];
 
 interface ActiveFormats {
   bold: boolean;
@@ -92,6 +135,8 @@ const EMOJIS = [
 })
 export class ComposerComponent implements OnChanges, OnDestroy {
   state = inject(ChatStateService);
+  private readonly liveData = inject(LiveDataService, { optional: true });
+  private readonly toast = inject(ToastService);
 
   @Input() lastMessageFromOther = false;
   @Input() isAI = false;
@@ -100,9 +145,14 @@ export class ComposerComponent implements OnChanges, OnDestroy {
   @Input() convId!: string;
   @Input() draft = "";
 
-  @Output() send = new EventEmitter<{ html: string; text: string }>();
+  @Output() send = new EventEmitter<{ html: string; text: string; attachments?: PendingAttachment[] }>();
   @Output() cancelReply = new EventEmitter<void>();
   @Output() draftChange = new EventEmitter<string>();
+  /** Slash command intercepted before send. Parent (AppComponent) routes
+   *  to the right LiveDataService method based on `command`. Composer
+   *  doesn't know about transitions / handoffs / etc. — it just parses
+   *  the leading `/<word>` and forwards. */
+  @Output() slashCommand = new EventEmitter<{ command: string; args: string }>();
 
   @ViewChild("editor") editor!: ElementRef<HTMLDivElement>;
   @ViewChild("blockBtn") blockBtn?: ElementRef<HTMLButtonElement>;
@@ -123,6 +173,9 @@ export class ComposerComponent implements OnChanges, OnDestroy {
   inTable = signal(false);
   showTableMenu = signal(false);
   mention = signal<MentionState | null>(null);
+  /** Slash-command popover state. Non-null while the user is typing a
+   *  slash command at the start of an empty editor. */
+  slash = signal<SlashState | null>(null);
 
   blockMenuPos = signal({ top: 0, left: 0 });
   tableMenuPos = signal({ top: 0, left: 0 });
@@ -148,6 +201,17 @@ export class ComposerComponent implements OnChanges, OnDestroy {
     return MENTIONABLE_USERS.filter((u) =>
       u.name.toLowerCase().includes(q) || (u.org || "").toLowerCase().includes(q)
     ).slice(0, 6);
+  });
+
+  /** Filtered slash command list — substring match on command name OR hint. */
+  filteredSlashCommands = computed<SlashCommandEntry[]>(() => {
+    const s = this.slash();
+    if (!s) return [];
+    const q = s.query.toLowerCase();
+    if (!q) return SLASH_COMMANDS;
+    return SLASH_COMMANDS.filter((c) =>
+      c.command.toLowerCase().includes(q) || c.hint.toLowerCase().includes(q)
+    );
   });
 
   currentBlockLabel = computed(() => {
@@ -243,6 +307,63 @@ export class ComposerComponent implements OnChanges, OnDestroy {
 
     this.inTable.set(!!this.findTableContext());
     this.mention.set(this.detectMention());
+    this.slash.set(this.detectSlash());
+  }
+
+  /** Detects a leading `/<word>` at the start of the editor (and only
+   *  there — slash anywhere else in a sentence isn't a command). Used
+   *  to surface the slash-command popover. */
+  private detectSlash(): SlashState | null {
+    if (!this.editor?.nativeElement) return null;
+    const text = (this.editor.nativeElement.innerText || "").trim();
+    // Only fire when the editor's first non-whitespace token is `/<word?>`
+    // — `/foo bar` should NOT show the popover after the user types past
+    // the word boundary.
+    const m = text.match(/^\/([a-z][a-z-]*)?$/i);
+    if (!m) return null;
+    const sel = window.getSelection?.();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    const probe = range.cloneRange();
+    probe.collapse(true);
+    let rect = probe.getBoundingClientRect();
+    if (!rect || (rect.top === 0 && rect.left === 0)) {
+      const span = document.createElement("span");
+      span.appendChild(document.createTextNode("​"));
+      probe.insertNode(span);
+      rect = span.getBoundingClientRect();
+      span.remove();
+    }
+    return { query: m[1] || "", rect: { left: rect.left, bottom: rect.bottom, top: rect.top }, index: 0 };
+  }
+
+  /** Insert a slash command from the popover. Replaces the editor's
+   *  current contents with the command text + a trailing space (for
+   *  commands that take args like `/note <message>`) or fires send
+   *  immediately for argless commands like `/help`. */
+  insertSlashCommand(entry: SlashCommandEntry): void {
+    const takesArgs = entry.label.includes('<') || entry.label.includes('[');
+    if (this.editor?.nativeElement) {
+      this.editor.nativeElement.innerText = takesArgs
+        ? `/${entry.command} `
+        : `/${entry.command}`;
+      // Place the cursor at the end so the user can immediately type args.
+      const range = document.createRange();
+      const sel = window.getSelection?.();
+      range.selectNodeContents(this.editor.nativeElement);
+      range.collapse(false);
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      this.editor.nativeElement.focus();
+    }
+    this.slash.set(null);
+    if (!takesArgs) {
+      // Fire immediately so the user gets one-click execution for
+      // argless commands.
+      this.handleSend();
+    } else {
+      this.updateState();
+    }
   }
 
   private checkEmpty(): void {
@@ -433,7 +554,27 @@ export class ComposerComponent implements OnChanges, OnDestroy {
     const plain = (this.editor?.nativeElement.innerText.trim()) ||
       (overrideHtml ? overrideHtml.replace(/<[^>]+>/g, "").trim() : "");
     if (!plain) return;
+
+    // Slash-command interception. Pattern: leading `/<command>` optionally
+    // followed by free-text args. Recognized commands are dispatched as a
+    // separate output event so AppComponent can route to the right
+    // LiveDataService method without baking transition logic into the
+    // composer. Unknown commands fall through to a normal send so users
+    // can still type `/path/to/something` in a real message without it
+    // being eaten as a command (slashCommand only matches /<word> at
+    // start with no path-like slash following).
+    const match = plain.match(/^\/([a-z][a-z-]*)\b\s*(.*)$/i);
+    if (match && !plain.includes('/', match[0].length)) {
+      this.slashCommand.emit({ command: match[1].toLowerCase(), args: match[2].trim() });
+      this.clearEditor();
+      return;
+    }
+
     this.send.emit({ html, text: plain });
+    this.clearEditor();
+  }
+
+  private clearEditor(): void {
     if (this.editor?.nativeElement) {
       this.editor.nativeElement.innerHTML = "";
       this.isEmpty.set(true);
@@ -446,6 +587,34 @@ export class ComposerComponent implements OnChanges, OnDestroy {
   }
 
   handleKeyDown(e: KeyboardEvent): void {
+    // Slash popover takes precedence over mention popover when both
+    // are open (slash only opens with cursor at start of an empty
+    // editor, so they shouldn't both be active anyway, but be defensive).
+    const s = this.slash();
+    const slashList = this.filteredSlashCommands();
+    if (s && slashList.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        this.slash.set({ ...s, index: (s.index + 1) % slashList.length });
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        this.slash.set({ ...s, index: (s.index - 1 + slashList.length) % slashList.length });
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        this.insertSlashCommand(slashList[s.index]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        this.slash.set(null);
+        return;
+      }
+    }
+
     const m = this.mention();
     const filtered = this.filteredMentions();
     if (m && filtered.length > 0) {
@@ -474,6 +643,16 @@ export class ComposerComponent implements OnChanges, OnDestroy {
       e.preventDefault();
       this.handleSend();
     }
+  }
+
+  /** Position helpers for the slash popover — same logic as mention. */
+  slashTop(s: SlashState): number {
+    const winH = typeof window !== "undefined" ? window.innerHeight : 1000;
+    return Math.min(s.rect.bottom + 6, winH - 320);
+  }
+  slashLeft(s: SlashState): number {
+    const winW = typeof window !== "undefined" ? window.innerWidth : 1200;
+    return Math.max(8, Math.min(s.rect.left, winW - 296));
   }
 
   /* ============================ Popovers ============================ */
@@ -553,8 +732,71 @@ export class ComposerComponent implements OnChanges, OnDestroy {
   onFocus(): void { this.isFocused.set(true); this.updateState(); }
   onBlur(): void  { this.isFocused.set(false); this.updateState(); }
 
+  /** Pending attachments queued for the next send. Each entry is the
+   *  fully-uploaded server response — we just need to pass them along
+   *  in the send payload. Cleared after handleSend. */
+  pendingAttachments = signal<PendingAttachment[]>([]);
+  /** True while ANY upload is in flight — disables the Send button to
+   *  prevent half-sent batches. */
+  uploading = signal(false);
+
+  /** ViewChild for the hidden file input — the visible Attach button
+   *  triggers a click on this so we get the native file picker for free. */
+  @ViewChild("fileInput") fileInput?: ElementRef<HTMLInputElement>;
+
   onAttach(): void {
-    alert("File attachment is not implemented in this demo.");
+    if (!this.liveData) {
+      this.toast.show("Attachments require a live backend.");
+      return;
+    }
+    this.fileInput?.nativeElement.click();
+  }
+
+  /** Hidden file input change handler — uploads each picked file and
+   *  pushes the result into pendingAttachments. Multi-select supported
+   *  via the input's `multiple` attribute. Clears the input value at
+   *  the end so picking the same file twice in a row still triggers a
+   *  fresh upload. */
+  async onFilesPicked(ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) return;
+    if (!this.liveData) return;
+    this.uploading.set(true);
+    try {
+      for (const f of files) {
+        const att = await this.liveData.uploadAttachment(f);
+        if (att) {
+          this.pendingAttachments.update((list) => [...list, {
+            kind: att.kind as PendingAttachment['kind'],
+            url: att.url,
+            filename: att.filename ?? f.name,
+            size: att.size,
+            mime: att.mime,
+          }]);
+        } else {
+          this.toast.show(`Upload failed: ${f.name}`);
+        }
+      }
+    } finally {
+      this.uploading.set(false);
+      input.value = ''; // allow re-selecting the same file
+    }
+  }
+
+  /** Drop one pending attachment (X button on the chip). Doesn't
+   *  delete the file from the server — file stays under the random id;
+   *  a future cleanup job can prune orphans. */
+  removePendingAttachment(i: number): void {
+    this.pendingAttachments.update((list) => list.filter((_, idx) => idx !== i));
+  }
+
+  /** Pretty-format a byte count for the chip subtitle. */
+  formatBytes(n: number | undefined): string {
+    if (!n) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   sendBtnClass(): string {

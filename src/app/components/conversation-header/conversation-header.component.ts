@@ -4,7 +4,12 @@ import {
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
+import { LiveDataService } from "../../services/live-data.service";
+import { ToastService } from "../../services/toast.service";
+import { SENDERS } from "../../data/senders";
 import { Conversation } from "../../models/types";
+import type { LiveConversation } from "../../services/adapters";
+import type { AIPhase, ChannelInfo, ChannelMember } from "../../models/api-types";
 import { IconComponent } from "../icon/icon.component";
 import { AvatarComponent } from "../avatar/avatar.component";
 
@@ -44,6 +49,8 @@ type NotifLevel = "all" | "mentions" | "important" | "none";
 })
 export class ConversationHeaderComponent implements OnDestroy {
   state = inject(ChatStateService);
+  private readonly liveData = inject(LiveDataService, { optional: true });
+  private readonly toast = inject(ToastService);
 
   @Input({ required: true }) conv!: Conversation;
   @Input() splitPane = true;
@@ -106,6 +113,162 @@ export class ConversationHeaderComponent implements OnDestroy {
     if (c.type === "meeting") return "Meeting room";
     if (c.isAI) return "Airlift Intelligence";
     return "";
+  }
+
+  /* =================== Live ChannelInfo accessors =================== */
+  //
+  // ChatStateService.activeChannelInfo() exposes the rich payload from
+  // GET /channels/:id/info — populated lazily on conv switch and
+  // refreshed by FCM phase.changed payloads. The helpers below let the
+  // template read individual pieces without unwrapping the optional in
+  // every binding.
+
+  /** Cached info for the active channel, or null while still loading. */
+  get info(): ChannelInfo | null { return this.state.activeChannelInfo(); }
+
+  /** Live member count — overrides the snapshot on `conv.members` once
+   *  the info payload arrives. */
+  get liveMemberCount(): number {
+    return this.info?.channel.members_summary.count ?? this.conv.members ?? 0;
+  }
+
+  /** First five members for the avatar pile under the channel name. */
+  get memberPile(): ChannelMember[] {
+    return (this.info?.members ?? []).slice(0, 5);
+  }
+
+  /** Look up a sender record by user_ref so the avatar component can
+   *  render the right tint + initials. SENDERS is pre-populated with
+   *  every seeded ref → mock-data record (data/senders.ts). */
+  senderForRef(ref: string): { name: string; color: string; initials: string } | null {
+    return SENDERS[ref] ?? null;
+  }
+
+  /** True for 1:1 channels (direct + ai_direct) — these don't get an
+   *  avatar pile because there's only one other party; the header
+   *  subtitle covers their identity already. Reads the API channel type
+   *  rather than the legacy `conv.type` because the legacy mapper
+   *  collapses direct + group_dm into the same "dm" bucket. */
+  get isDirectChat(): boolean {
+    const apiType = (this.conv as LiveConversation).api?.type;
+    if (apiType === 'direct' || apiType === 'ai_direct') return true;
+    // Mock-data fallback: legacy type "dm" with no API doc was always 1:1.
+    if (!apiType && this.conv.type === 'dm') return true;
+    return false;
+  }
+
+  /** Last-activity stamp for direct chats — replaces the avatar pile.
+   *  Returns the relative time of the channel's last_message, or empty
+   *  when no activity yet. */
+  get lastActivityLabel(): string {
+    const ts = this.info?.channel.last_activity_at ?? this.info?.channel.last_message?.created_on;
+    if (!ts) return '';
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return '';
+    const diff = Date.now() - d.getTime();
+    const min = Math.floor(diff / 60_000);
+    if (min < 1) return 'Active now';
+    if (min < 60) return `Last seen ${min}m ago`;
+    const hrs = Math.floor(min / 60);
+    if (hrs < 24) return `Last seen ${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days === 1) return 'Last seen yesterday';
+    if (days < 7) return `Last seen ${days}d ago`;
+    return `Last seen ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+  }
+
+  /** Banner shown above the action row when the channel has an active
+   *  handoff. Customer sees the "agent claimed" state; agents see who
+   *  beat them to it (or the urgency pill when still pending). */
+  get handoffNotice(): { kind: 'pending' | 'claimed' | null; label: string; agent?: string } {
+    const h = this.info?.active_handoff;
+    if (!h) return { kind: null, label: '' };
+    if (h.status === 'pending') {
+      return { kind: 'pending', label: 'Awaiting agent' };
+    }
+    if (h.status === 'claimed' && h.claimed_by) {
+      const sender = SENDERS[h.claimed_by];
+      const name = sender?.name ?? h.claimed_by;
+      return { kind: 'claimed', label: `Claimed by ${name}`, agent: h.claimed_by };
+    }
+    return { kind: null, label: '' };
+  }
+
+  /* =================== Phase-aware controls (live channels) =================== */
+  //
+  // When the channel is backed by a live AI session (LiveConversation with
+  // .api.ai_session_state), surface a context button row in the header
+  // matching the current phase:
+  //
+  //   ai_only          [Take over]
+  //   handoff_pending  [Take over]    (urgent — this is the queue case)
+  //   human_active     [Return to AI] [Resolve]
+  //   ai_assist        [Return to AI] [Resolve]
+  //   resolved         [Re-open]
+  //   reopened         (no buttons — auto-flips on next msg)
+  //
+  // Customer (ext:*) callers see only [Talk to a human] in ai_only/ai_assist.
+
+  /** Phase string when this conv is a live ai_assisted/ai_direct channel,
+   *  null otherwise. Drives which buttons appear. */
+  get phase(): AIPhase | null {
+    const apiCh = (this.conv as LiveConversation).api;
+    return apiCh?.ai_session_state?.phase ?? null;
+  }
+
+  get phaseControlsVisible(): boolean { return this.phase !== null; }
+
+  /** Take over surfaces ONLY when there's an actual handoff to claim:
+   *
+   *   - Channel is ai_assisted (ai_direct is the operator's own assistant —
+   *     no customer to take over from, ever).
+   *   - Phase is handoff_pending (the customer pressed "Talk to a human"
+   *     OR the queue routed it here). In plain ai_only there's nothing
+   *     waiting and the AI is doing the work; ops shouldn't see a
+   *     speculative claim button.
+   *   - No-one else has already claimed it (defensive — the backend would
+   *     409 anyway, but hiding the button avoids the round-trip).
+   */
+  get canTakeOver(): boolean {
+    const apiCh = (this.conv as LiveConversation).api;
+    if (!apiCh) return false;
+    if (apiCh.type !== 'ai_assisted') return false;
+    if (this.phase !== 'handoff_pending') return false;
+    const h = this.info?.active_handoff;
+    if (h && h.status === 'claimed') return false;
+    return true;
+  }
+
+  async onTakeOver(): Promise<void> {
+    if (!this.liveData) return;
+    const apiCh = (this.conv as LiveConversation).api;
+    if (!apiCh) return;
+    const res = await this.liveData.takeOver(apiCh.id);
+    if (res?.ok) this.toast.show(`Phase → ${res.phase ?? 'unknown'}`);
+  }
+
+  async onReturnToAI(): Promise<void> {
+    if (!this.liveData) return;
+    const apiCh = (this.conv as LiveConversation).api;
+    if (!apiCh) return;
+    const res = await this.liveData.returnToAI(apiCh.id);
+    if (res?.ok) this.toast.show(`Phase → ${res.phase ?? 'unknown'}`);
+  }
+
+  async onResolveChannel(): Promise<void> {
+    if (!this.liveData) return;
+    const apiCh = (this.conv as LiveConversation).api;
+    if (!apiCh) return;
+    const res = await this.liveData.resolveChannel(apiCh.id);
+    if (res?.ok) this.toast.show('Resolved.');
+  }
+
+  async onRequestHuman(): Promise<void> {
+    if (!this.liveData) return;
+    const apiCh = (this.conv as LiveConversation).api;
+    if (!apiCh) return;
+    const res = await this.liveData.requestHuman(apiCh.id);
+    if (res?.ok) this.toast.show('Bringing in our support team.');
   }
 
   /* =================== Inline-vs-overflow icon visibility =================== */

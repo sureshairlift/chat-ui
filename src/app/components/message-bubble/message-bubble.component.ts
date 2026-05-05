@@ -6,6 +6,7 @@ import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { ChatStateService } from "../../services/chat-state.service";
 import { ToastService } from "../../services/toast.service";
+import { IdentityService } from "../../services/identity.service";
 import { SENDERS } from "../../data/senders";
 import { Message, Reaction, Sender } from "../../models/types";
 
@@ -15,9 +16,12 @@ import { AttachmentRendererComponent } from "../attachment/attachment.component"
 import { AIChartMessageComponent } from "../ai-chart-message/ai-chart-message.component";
 import { AIListMessageComponent } from "../ai-list-message/ai-list-message.component";
 import { AIRatedMessageComponent } from "../ai-rated-message/ai-rated-message.component";
+import { BlockRendererComponent, type BlockAction, type BlockFormSubmit } from "../block-renderer/block-renderer.component";
 import { ReactionBarComponent } from "../reaction-bar/reaction-bar.component";
 import { LinkPreviewComponent } from "../link-preview/link-preview.component";
 import { RenderTextPipe, SafeHtmlPipe } from "../../pipes/render-text.pipe";
+import type { Block } from "../../models/api-types";
+import type { LiveMessage } from "../../services/adapters";
 
 /**
  * Single chat message — handles every variant in one component.
@@ -40,7 +44,8 @@ import { RenderTextPipe, SafeHtmlPipe } from "../../pipes/render-text.pipe";
   imports: [
     CommonModule, FormsModule, IconComponent, AvatarComponent,
     AttachmentRendererComponent, AIChartMessageComponent,
-    AIListMessageComponent, AIRatedMessageComponent, ReactionBarComponent,
+    AIListMessageComponent, AIRatedMessageComponent,
+    BlockRendererComponent, ReactionBarComponent,
     LinkPreviewComponent, RenderTextPipe, SafeHtmlPipe,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -49,6 +54,7 @@ import { RenderTextPipe, SafeHtmlPipe } from "../../pipes/render-text.pipe";
 export class MessageBubbleComponent implements OnDestroy {
   state = inject(ChatStateService);
   toast = inject(ToastService);
+  private readonly identity = inject(IdentityService);
 
   @Input({ required: true }) msg!: Message;
   @Input() prevMsg: Message | null = null;
@@ -66,14 +72,82 @@ export class MessageBubbleComponent implements OnDestroy {
 
   @ViewChild("editArea") editArea?: ElementRef<HTMLTextAreaElement>;
 
-  get isMe(): boolean { return this.msg.sender === "me"; }
-  get isAI(): boolean { return this.msg.sender === "airliftai"; }
+  get isMe(): boolean {
+    // Two sender shapes coexist during the mock-to-live migration:
+    //   - mock data sets sender = "me"
+    //   - live data sets sender = the user_ref string ("op:2")
+    // Compare against both so own-message bubbles right-align in either
+    // mode. IdentityService is the source of truth for the live ref.
+    const s = this.msg.sender;
+    if (!s) return false;
+    if (s === "me") return true;
+    return s === this.identity.userRef();
+  }
+  get isAI(): boolean {
+    // Mock data uses "airliftai"; live data uses the namespaced bot ref.
+    const s = this.msg.sender;
+    return s === "airliftai" || s === "bot:ai";
+  }
   get isAIRich(): boolean {
     return this.msg.type === "ai-chart" || this.msg.type === "ai-list" || this.msg.type === "ai-rated";
   }
   get isAIText(): boolean { return this.msg.type === "ai-text"; }
 
+  /** True when the message carries the new block protocol (LiveMessage from
+   *  the backend). Falls through to BlockRendererComponent instead of the
+   *  legacy ai-chart / ai-list / ai-rated dispatch. */
+  get hasBlocks(): boolean {
+    const blocks = (this.msg as LiveMessage).blocks;
+    return Array.isArray(blocks) && blocks.length > 0;
+  }
+
+  /** Typed accessor for the template — keeps strict ngFor happy. */
+  get blocks(): Block[] {
+    return ((this.msg as LiveMessage).blocks ?? []) as Block[];
+  }
+
+  /** Action emitted by an actions or handoff block. Routes by intent so
+   *  the bubble doesn't have to care about the specific block kind. */
+  onBlockAction(a: BlockAction): void {
+    switch (a.intent) {
+      case 'handoff':
+        // Customer asked to bring in the team — Phase 9 follow-up wires
+        // this through ChatStateService.requestHumanLive(this.convId, ...).
+        this.toast.show('Handoff request sent.');
+        break;
+      case 'retry':
+        // Re-send the user's most recent message in this conv.
+        this.toast.show('Retrying...');
+        break;
+      default:
+        // Unknown intent — surface for debugging; safe to ignore.
+        // eslint-disable-next-line no-console
+        console.debug('[block-action]', a);
+    }
+  }
+
+  /** Form block submit — the bubble forwards values; service decides what
+   *  to do with them (typically POSTs to a tool-call endpoint). */
+  onBlockFormSubmit(s: BlockFormSubmit): void {
+    // eslint-disable-next-line no-console
+    console.debug('[block-form-submit]', s);
+    this.toast.show('Form submitted.');
+  }
+
+  /** Stable identity for *ngFor over blocks — keeps DOM nodes intact
+   *  while text blocks stream in (avoids the reflow flicker that would
+   *  happen if Angular tore down + rebuilt every block on every event). */
+  trackBlock(_i: number, b: Block): string { return b.id; }
+
   get sender(): Sender | null {
+    // Live messages (LiveMessage) carry the full Sender object on
+    // `senderRecord` because the legacy `msg.sender` field is now just a
+    // user_ref string ("op:18") — it's no longer a key into SENDERS, which
+    // is the mock-data directory keyed by short ids ("shiron", "rajkumar").
+    // Prefer the live record when present; fall back to SENDERS for the
+    // mock-data demo path.
+    const live = (this.msg as LiveMessage).senderRecord;
+    if (live) return live;
     return this.msg.sender ? (SENDERS[this.msg.sender] || null) : null;
   }
   get quotedSender(): Sender | null {
@@ -196,9 +270,17 @@ export class MessageBubbleComponent implements OnDestroy {
 
   get bubbleClass(): string {
     const base = "relative rounded-2xl px-3.5 py-2 max-w-[85%] inline-block";
-    const tone = this.isMe
-      ? "bg-blue-100 text-gray-900 rounded-tr-sm"
-      : "bg-gray-100 text-gray-900 rounded-tl-sm";
+    // Tombstoned messages drop the colored fill in favor of a dashed
+    // outline so the row reads as "removed content" instead of "a
+    // message with quiet text in it." The corner-tab rounding still
+    // matches the sender side so it lines up with the avatar column.
+    const tone = this.msg.deleted
+      ? (this.isMe
+          ? "bg-transparent border border-dashed border-gray-300 rounded-tr-sm"
+          : "bg-transparent border border-dashed border-gray-300 rounded-tl-sm")
+      : (this.isMe
+          ? "bg-blue-100 text-gray-900 rounded-tr-sm"
+          : "bg-gray-100 text-gray-900 rounded-tl-sm");
     const ring = this.highlightQuery ? "ring-2 ring-yellow-300 ring-offset-1" : "";
     return `${base} ${tone} ${ring}`;
   }
@@ -246,18 +328,38 @@ export class MessageBubbleComponent implements OnDestroy {
   };
 
   onReact(e: { msgId: string; emoji: string }): void {
-    this.state.toggleReaction(e.msgId, e.emoji);
+    // Live mode: round-trips through chat-service so other channel members
+    // see the reaction via FCM. Optimistically updates local reactions
+    // map inside toggleReactionLive — UI reflects the change immediately.
+    if (this.state.live()) {
+      void this.state.toggleReactionLive(e.msgId, e.emoji);
+    } else {
+      this.state.toggleReaction(e.msgId, e.emoji);
+    }
     this.pickerFor.set(false);
   }
 
   onTogglePin(): void {
-    this.state.togglePin(this.convId, this.msg.id);
+    // Live mode: round-trip through chat-service so all members see the
+    // pin. The optimistic local flip happens inside togglePinLive so the
+    // bubble icon reflects the new state without waiting for the request.
+    if (this.state.live()) {
+      void this.state.togglePinLive(this.convId, this.msg.id);
+    } else {
+      this.state.togglePin(this.convId, this.msg.id);
+    }
     this.toast.show(this.isPinned ? "Unpinned" : "Pinned to board");
     this.showMenu.set(false);
   }
 
   onToggleSave(): void {
-    this.state.toggleSave(this.msg.id);
+    // Live mode: PUT /messages/:id/star (or DELETE) so the saved list
+    // syncs across devices via the per-user starred_by[] on the message.
+    if (this.state.live()) {
+      void this.state.toggleSaveLive(this.msg.id);
+    } else {
+      this.state.toggleSave(this.msg.id);
+    }
     this.toast.show(this.isSaved ? "Removed from saved" : "Saved");
     this.showMenu.set(false);
   }
@@ -285,6 +387,15 @@ export class MessageBubbleComponent implements OnDestroy {
     this.showMenu.set(false);
   }
 
+  /** Pop the message into a fullscreen modal so the user can read
+   *  long content without the bubble's max-width / scroll. */
+  onExpandMessage(): void {
+    // eslint-disable-next-line no-console
+    console.debug("[expand] open", this.msg.id);
+    this.state.openMessageFullscreen(this.msg);
+    this.showMenu.set(false);
+  }
+
   copyText(): void {
     const txt = this.msg.html
       ? this.msg.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
@@ -307,7 +418,13 @@ export class MessageBubbleComponent implements OnDestroy {
   submitEdit(): void {
     const v = this.editValue().trim();
     if (!v) return;
-    this.state.editMessage(this.convId, this.msg.id, { text: v, html: undefined });
+    // Live mode: PATCH /messages/:id and refresh the message map on
+    // success. The local mock branch stays for the demo path.
+    if (this.state.live()) {
+      void this.state.editMessageLive(this.msg.id, this.convId, v);
+    } else {
+      this.state.editMessage(this.convId, this.msg.id, { text: v, html: undefined });
+    }
     this.editing.set(false);
   }
 
@@ -317,7 +434,13 @@ export class MessageBubbleComponent implements OnDestroy {
   }
 
   onDelete(): void {
-    this.state.deleteMessage(this.convId, this.msg.id);
+    // Live mode: DELETE /messages/:id (soft-delete on the backend), then
+    // refresh the local map. The mock path stays for offline demos.
+    if (this.state.live()) {
+      void this.state.deleteMessageLive(this.msg.id, this.convId);
+    } else {
+      this.state.deleteMessage(this.convId, this.msg.id);
+    }
     this.toast.show("Message deleted");
     this.showMenu.set(false);
   }

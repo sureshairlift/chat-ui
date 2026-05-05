@@ -4,10 +4,12 @@ import {
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
+import { LiveDataService } from "../../services/live-data.service";
 import { SENDERS } from "../../data/senders";
 import { Attachment, Message, ThreadReply, Sender } from "../../models/types";
 import { sanitizeHtml, renderTextWithLinksHtml } from "../../services/helpers";
 import { FilePreviewService } from "../../services/file-preview.service";
+import type { LiveMessage } from "../../services/adapters";
 
 import { IconComponent } from "../icon/icon.component";
 import { AvatarComponent } from "../avatar/avatar.component";
@@ -48,8 +50,9 @@ interface DisplayReply extends ThreadReply {
   templateUrl: "./thread-panel.component.html",
 })
 export class ThreadPanelComponent implements OnChanges {
-  state   = inject(ChatStateService);
-  preview = inject(FilePreviewService);
+  state    = inject(ChatStateService);
+  preview  = inject(FilePreviewService);
+  private readonly liveData = inject(LiveDataService, { optional: true });
 
   /** Open the FilePreviewOverlay with the parent message's attachments
    *  as siblings, so the user can flip through all of them. */
@@ -75,6 +78,22 @@ export class ThreadPanelComponent implements OnChanges {
       this.replies.set([...((this.parent.thread?.replies as DisplayReply[]) || [])]);
       this.threadReplyingTo.set(null);
       this.threadDraft.set("");
+
+      // Live messages have thread_meta.reply_count but no inline replies —
+      // the bubble's adapter sets thread.replies to []. Fetch them on
+      // demand from chat-service so the panel actually shows them.
+      const live = (this.parent as LiveMessage).api;
+      const needsFetch = live && this.parent.thread && this.parent.thread.count > 0
+        && (this.replies().length === 0);
+      if (needsFetch && this.liveData) {
+        void this.liveData.loadThread(this.parent.id).then((msgs) => {
+          // Skip the parent message if Go's listThread includes it (some
+          // implementations return parent + replies; ours returns replies only,
+          // but we filter defensively).
+          const onlyReplies = msgs.filter((m) => m.id !== this.parent.id);
+          this.replies.set(onlyReplies.map(liveToDisplayReply));
+        });
+      }
     }
   }
 
@@ -129,17 +148,65 @@ export class ThreadPanelComponent implements OnChanges {
       plain = (payload.text || "").trim();
     }
     if (!plain) return;
-    const newReply: DisplayReply = { sender: "me", time: "now", text: "" };
     const stripped = html.replace(/<[^>]+>/g, "").trim();
     const useHtml = html && (stripped !== plain
       || /<(strong|em|u|s|code|ul|ol|li|table|h[1-3]|blockquote|span|a)\b/i.test(html));
+    const target = this.threadReplyingTo();
+
+    // Live mode: persist via the chat-service so the reply survives a
+    // refresh and other channel members see it via FCM. Reads the parent
+    // message's API doc for channel_id (the panel's `parent` is whatever
+    // was passed in; we trust LiveMessage's channelId).
+    const liveParent = (this.parent as LiveMessage).api;
+    if (this.liveData && liveParent) {
+      // Optimistic local append so the bubble appears instantly while the
+      // POST is in flight. The full message gets refetched from
+      // listThread on the next openThread; the local entry is the same
+      // shape, just synthetic.
+      const optimistic: DisplayReply = { sender: "me", time: "now", text: "" };
+      if (useHtml) optimistic.html = html;
+      else optimistic.text = plain;
+      if (target) optimistic.quoted = {
+        sender: target.senderName,
+        senderId: target.senderId,
+        text: target.text,
+      };
+      this.replies.set([...this.replies(), optimistic]);
+      this.threadDraft.set("");
+      this.threadReplyingTo.set(null);
+
+      void this.liveData.sendNormal(liveParent.channel_id, {
+        content: useHtml ? html : plain,
+        content_format: useHtml ? "markdown" : "text",
+        thread_root_id: liveParent.id,
+        // Carry the in-thread reply target as a quoted parent so the
+        // reply bubble's "Replying to X" pill renders for other clients.
+        quoted: target ? {
+          message_id: this.parent.id,
+          sender: target.senderId,
+          snippet: (target.text || "").slice(0, 200),
+        } : undefined,
+        client_message_id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      }).then((persisted) => {
+        // Nudge the parent's thread_meta count + last_reply_at — the
+        // parent bubble's "X replies" chip in the main feed will repaint
+        // on next refresh. Avoiding a heavy refetch here.
+        if (persisted && this.parent.thread) {
+          this.parent.thread.count = (this.parent.thread.count || 0) + 1;
+          this.parent.thread.lastTime = persisted.time;
+        }
+      });
+      return;
+    }
+
+    // Mock-data fallback: stays local (the legacy demo behavior).
+    const newReply: DisplayReply = { sender: "me", time: "now", text: "" };
     if (useHtml) {
       newReply.html = html;
       newReply.text = "";
     } else {
       newReply.text = plain;
     }
-    const target = this.threadReplyingTo();
     if (target) {
       newReply.quoted = {
         sender: target.senderName,
@@ -159,4 +226,17 @@ export class ThreadPanelComponent implements OnChanges {
     this.closing.set(true);
     setTimeout(() => this.closed.emit(), 180);
   }
+}
+
+/** Convert a fetched LiveMessage reply into the DisplayReply shape the
+ *  panel template expects. The legacy ThreadReply only carries sender id,
+ *  text, time, optional reactions — we map from the API payload. */
+function liveToDisplayReply(m: LiveMessage): DisplayReply {
+  return {
+    sender: m.sender ?? "",
+    text: m.text ?? "",
+    time: m.time ?? "",
+    reactions: m.reactions,
+    html: m.html,
+  };
 }

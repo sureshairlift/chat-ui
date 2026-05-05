@@ -40,6 +40,9 @@
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "proxyConfig": "proxy.conf.json"
+          },
           "configurations": {
             "production": { "buildTarget": "airlift-chat:build:production" },
             "development": { "buildTarget": "airlift-chat:build:development" }

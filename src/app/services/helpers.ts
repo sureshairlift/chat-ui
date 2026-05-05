@@ -24,29 +24,86 @@ export function sanitizeHtml(html: string | null | undefined): string {
 }
 
 /**
- * Day-grouping helper: extract a stable key from a message's pre-formatted
- * time string. Time strings come in many shapes ("Tue 8:59 AM",
- * "Yesterday 6:33 AM", "11:37 AM", "23 min", "now", "Apr 22, 2:06 PM",
- * "Mar 13", etc.) — we pattern-match the leading token.
+ * Day-grouping helper. When a real ISO timestamp is available (live
+ * messages carry one on `m.api.created_on` / `m.iso`), bucket by the
+ * date portion of that timestamp — gives a stable, locale-stable key
+ * like "2026-04-22". When only a display string is available (mock
+ * data, optimistic placeholders), fall back to the legacy regex
+ * parser that recognises "Tue 8:59 AM" / "Yesterday …" / "Apr 22 …".
+ *
+ * The key is opaque to callers — pass it to `formatDayLabel` to get
+ * the human-friendly header text.
  */
-export function getDayKey(time: string | undefined | null): string {
-  if (!time) return "Today";
+export function getDayKey(time: string | undefined | null, iso?: string | null): string {
+  if (iso) {
+    const d = new Date(iso);
+    if (!Number.isNaN(d.getTime())) {
+      // YYYY-MM-DD in local time. Local on purpose so a message sent
+      // at 11pm doesn't show under tomorrow's header for a US user.
+      return ymd(d);
+    }
+  }
+  if (!time) return ymd(new Date());
   const dayName = time.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/);
   if (dayName) return dayName[1];
   if (/^Yesterday\b/.test(time)) return "Yesterday";
   const monthDay = time.match(/^([A-Z][a-z]{2})\s+(\d{1,2})/);
   if (monthDay) return `${monthDay[1]} ${monthDay[2]}`;
-  // Bare time ("11:37 AM"), relative ("23 min", "now") — treat as today
-  return "Today";
+  // Bare time ("11:37 AM"), relative ("23 min", "now") — treat as today.
+  return ymd(new Date());
 }
 
-/** Friendly label for a day key (e.g. "Tue" → "Tuesday", "Apr 22" stays as-is). */
+/**
+ * Friendly label for a day key.
+ *
+ *   today                → "Today"
+ *   yesterday            → "Yesterday"
+ *   within last 7 days   → weekday name ("Tuesday")
+ *   within current year  → "Apr 22"
+ *   older                → "Apr 22, 2025"
+ *
+ * Accepts both new ISO-style YYYY-MM-DD keys and the legacy short
+ * tokens ("Tue", "Apr 22", "Yesterday") so mixed mock/live lists keep
+ * rendering during the migration.
+ */
 export function formatDayLabel(key: string): string {
-  const map: Record<string, string> = {
+  // Legacy-token paths (mock data, optimistic placeholders).
+  const legacyMap: Record<string, string> = {
     Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday",
     Fri: "Friday", Sat: "Saturday", Sun: "Sunday",
+    Yesterday: "Yesterday", Today: "Today",
   };
-  return map[key] || key;
+  if (legacyMap[key]) return legacyMap[key];
+
+  // YYYY-MM-DD path (live data).
+  const m = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return key; // unrecognised — render verbatim ("Apr 22" etc.)
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (Number.isNaN(d.getTime())) return key;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(d);
+  target.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today.getTime() - target.getTime()) / 86_400_000);
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays > 1 && diffDays < 7) {
+    return d.toLocaleDateString([], { weekday: "long" });
+  }
+  if (d.getFullYear() === today.getFullYear()) {
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+  return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Local YYYY-MM-DD — used as the day-bucket key for live messages. */
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /**

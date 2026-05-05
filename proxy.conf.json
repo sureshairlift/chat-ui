@@ -1,0 +1,11 @@
+{
+  "/api/v2/chat-service": {
+    "target": "http://localhost:7081",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug",
+    "ws": false,
+    "proxyTimeout": 0,
+    "timeout": 0
+  }
+}

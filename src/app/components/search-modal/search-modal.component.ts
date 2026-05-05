@@ -5,8 +5,10 @@ import {
 import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { ChatStateService } from "../../services/chat-state.service";
+import { LiveDataService } from "../../services/live-data.service";
 import { MENTIONABLE_USERS, MentionableUser, SENDERS } from "../../data/senders";
 import { Conversation, Message } from "../../models/types";
+import type { LiveMessage } from "../../services/adapters";
 import { IconComponent } from "../icon/icon.component";
 import { AvatarComponent } from "../avatar/avatar.component";
 
@@ -39,6 +41,7 @@ interface SegmentList { before: string; match: string; after: string; }
 })
 export class SearchModalComponent implements AfterViewInit {
   state = inject(ChatStateService);
+  private readonly liveData = inject(LiveDataService, { optional: true });
 
   @Output() closed = new EventEmitter<void>();
   @Output() pickConvId = new EventEmitter<string>();
@@ -51,6 +54,14 @@ export class SearchModalComponent implements AfterViewInit {
   query = signal("");
   activeIdx = signal(0);
 
+  /** Live message hits from chat-service /search. Populated by a
+   *  debounced query in `onQuery`. The legacy `messageResults` computed
+   *  below merges these into the result list — when live results arrive
+   *  they take precedence over local mock-data filtering. */
+  liveMessageHits = signal<LiveMessage[]>([]);
+  liveSearching = signal(false);
+  private searchTimer?: ReturnType<typeof setTimeout>;
+
   q = computed(() => this.query().trim().toLowerCase());
 
   ngAfterViewInit(): void { this.input?.nativeElement.focus(); }
@@ -58,6 +69,37 @@ export class SearchModalComponent implements AfterViewInit {
   onQuery(v: string): void {
     this.query.set(v);
     this.activeIdx.set(0);
+
+    // Live mode: debounce a server-side search so we don't fire one POST
+    // per keystroke. 250ms is the sweet spot for "feels instant" — the
+    // local mock-data filter renders meanwhile so the user sees results
+    // immediately, then live hits replace them when they arrive.
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    if (!this.liveData || !this.state.live()) {
+      this.liveMessageHits.set([]);
+      return;
+    }
+    const trimmed = v.trim();
+    if (!trimmed) {
+      this.liveMessageHits.set([]);
+      this.liveSearching.set(false);
+      return;
+    }
+    this.liveSearching.set(true);
+    this.searchTimer = setTimeout(async () => {
+      // searchEverything supports both plain text and Gmail-style
+      // operators (`from:`, `is:pinned`, `has:attachment`, `before:`,
+      // `after:`) — same endpoint, richer filtering. The legacy
+      // searchMessages is still around for very simple text-only paths
+      // (e.g. the conv-scoped header search bar).
+      const res = await this.liveData!.searchEverything({ q: trimmed, limit: 30 });
+      // If the user kept typing while we were waiting, drop these stale
+      // results — only commit when they match the current query.
+      if (this.query().trim() === trimmed) {
+        this.liveMessageHits.set(res.results);
+        this.liveSearching.set(false);
+      }
+    }, 250);
   }
 
   setIdx(i: number): void { this.activeIdx.set(i); }
@@ -84,9 +126,28 @@ export class SearchModalComponent implements AfterViewInit {
   messageResults = computed<{ msg: Message; conv: Conversation }[]>(() => {
     const q = this.q();
     if (!q) return [];
+
+    // When live search has results, prefer them — they're scored by
+    // Mongo $text (relevance) and cover EVERY channel the user belongs
+    // to, not just the few cached in messagesByConv. The local map
+    // search runs as a fallback when the live results are empty (e.g.
+    // mock-data demo or backend down).
+    const hits = this.liveMessageHits();
+    const convs = this.state.conversations();
+    if (hits.length > 0) {
+      const out: { msg: Message; conv: Conversation }[] = [];
+      for (const m of hits) {
+        const conv = convs.find((c) => c.id === m.channelId);
+        if (!conv) continue;
+        out.push({ msg: m, conv });
+        if (out.length >= 8) break;
+      }
+      return out;
+    }
+
+    // Fallback: local map search (covers mock data + cached live channels).
     const out: { msg: Message; conv: Conversation }[] = [];
     const map = this.state.messagesByConv();
-    const convs = this.state.conversations();
     for (const [convId, msgs] of Object.entries(map)) {
       for (const m of msgs) {
         const haystack = this.stripHtml(m.text || m.html || "").toLowerCase();

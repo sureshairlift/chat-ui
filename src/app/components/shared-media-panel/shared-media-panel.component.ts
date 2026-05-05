@@ -1,9 +1,10 @@
 import {
-  ChangeDetectionStrategy, Component, EventEmitter, Input, Output,
-  computed, inject, signal,
+  ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output,
+  SimpleChanges, computed, effect, inject, signal,
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
+import { LiveDataService } from "../../services/live-data.service";
 import { ToastService } from "../../services/toast.service";
 import { FilePreviewService } from "../../services/file-preview.service";
 import { SENDERS } from "../../data/senders";
@@ -36,8 +37,9 @@ type TabKey = "all" | "images" | "media" | "files";
   host: { class: "block shrink-0 h-full" },
   templateUrl: "./shared-media-panel.component.html",
 })
-export class SharedMediaPanelComponent {
+export class SharedMediaPanelComponent implements OnChanges {
   state   = inject(ChatStateService);
+  liveData = inject(LiveDataService, { optional: true });
   toast   = inject(ToastService);
   preview = inject(FilePreviewService);
 
@@ -48,8 +50,18 @@ export class SharedMediaPanelComponent {
   closing = signal(false);
   tab = signal<TabKey>("all");
 
-  /** Flatten all attachments in the current conv with sender + time context. */
+  /** Server-loaded shared items (live mode). When null, the computed
+   *  `all` falls back to walking the in-memory message list. The panel
+   *  hydrates this on bind and on tab change so the list reflects every
+   *  attachment the channel has ever held, not just the loaded window. */
+  serverItems = signal<SharedItem[] | null>(null);
+
+  /** Flatten all attachments in the current conv with sender + time context.
+   *  Prefers server-side hydration when live; falls back to walking the
+   *  cached message list (covers offline/demo mode). */
   all = computed<SharedItem[]>(() => {
+    const server = this.serverItems();
+    if (server) return server;
     if (!this.conv) return [];
     const msgs = this.state.messagesByConv()[this.conv.id] || [];
     const out: SharedItem[] = [];
@@ -61,6 +73,45 @@ export class SharedMediaPanelComponent {
     }
     return out;
   });
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes["conv"] && this.conv) {
+      void this.hydrate();
+    }
+  }
+
+  /** Pull the channel-wide shared list from the backend so the panel
+   *  shows files older than the loaded message window. Quiet on
+   *  failure — fallback to in-memory walk via the computed signal. */
+  private async hydrate(): Promise<void> {
+    if (!this.conv || !this.state.live() || !this.liveData) {
+      this.serverItems.set(null);
+      return;
+    }
+    const items = await this.liveData.loadSharedInfo(this.conv.id, "all", { limit: 200 });
+    if (items.length === 0) {
+      this.serverItems.set([]);
+      return;
+    }
+    // Adapt backend SharedItem to the legacy local shape so the existing
+    // template (filtering by `att.type`) keeps working. Drop "link"
+    // entries — the shared-media panel only shows files/media.
+    const flattened: SharedItem[] = items
+      .filter((it) => it.kind !== "link")
+      .map((it, i) => ({
+        type: it.kind as Attachment["type"],
+        name: it.filename ?? it.url,
+        ext: it.filename?.split(".").pop()?.toLowerCase(),
+        size: it.size ? humanReadableSize(it.size) : undefined,
+        mime: it.mime,
+        preview: it.thumb_url,
+        msgId: it.message_id,
+        attIdx: i,
+        sender: it.shared_by?.ref,
+        time: it.shared_on,
+      } as SharedItem));
+    this.serverItems.set(flattened);
+  }
 
   images = computed(() => this.all().filter((a) => a.type === "image"));
   videos = computed(() => this.all().filter((a) => a.type === "video"));
@@ -127,4 +178,13 @@ export class SharedMediaPanelComponent {
     this.closing.set(true);
     setTimeout(() => this.closed.emit(), 180);
   }
+}
+
+/** "1.4 MB", "230 KB", "8 B" — matches what the legacy `Attachment.size`
+ *  string is meant to look like in the bubble row. */
+function humanReadableSize(bytes: number): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

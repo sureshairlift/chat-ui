@@ -1,6 +1,7 @@
 import {
-  ChangeDetectionStrategy, Component, EventEmitter, HostBinding, Input, Output,
-  computed, inject, signal,
+  AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, EventEmitter,
+  HostBinding, Input, OnDestroy, Output, ViewChild, ViewChildren, QueryList,
+  computed, effect, inject, signal,
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
@@ -31,7 +32,7 @@ import { ResizeHandleComponent } from "../resize-handle/resize-handle.component"
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./home-list.component.html",
 })
-export class HomeListComponent {
+export class HomeListComponent implements AfterViewInit, OnDestroy {
   state = inject(ChatStateService);
 
   @Input() width = 420;
@@ -44,6 +45,13 @@ export class HomeListComponent {
 
   expandedSummaries = signal<Set<string>>(new Set());
   customerFilter = signal<"all" | "direct" | "groups">("all");
+
+  /** Sentinel divs at the bottom of each list. The IntersectionObserver
+   *  watches every match — only one renders at a time depending on
+   *  selectedSection, so this is fine. Triggers loadMoreConvsLive
+   *  when the active sentinel scrolls into view. */
+  @ViewChildren("loadMoreSentinel") loadMoreSentinels!: QueryList<ElementRef<HTMLElement>>;
+  private observer?: IntersectionObserver;
 
   /** Filtered + pin-sorted base list */
   private baseConvs = computed<Conversation[]>(() => {
@@ -185,5 +193,33 @@ export class HomeListComponent {
     } else {
       this.state.moveConvSection(e.id, e.section);
     }
+  }
+
+  ngAfterViewInit(): void {
+    if (typeof IntersectionObserver === "undefined") return;
+    // Threshold 0 + scroll-root rootMargin: trigger as soon as the
+    // sentinel hits the bottom edge of any scrollable ancestor. We
+    // re-observe whenever the *ngSwitch flips and the sentinel id
+    // changes (handled by the QueryList changes subscription below).
+    this.observer = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        // Live mode: paginate. Mock-data lists ignore — local lists
+        // don't have a "next page" semantic.
+        if (this.state.live() && this.state.hasMoreConvs() && !this.state.loadingMoreConvs()) {
+          void this.state.loadMoreConvsLive();
+        }
+      }
+    });
+    const observe = () => {
+      this.observer?.disconnect();
+      this.loadMoreSentinels.forEach((el) => this.observer?.observe(el.nativeElement));
+    };
+    observe();
+    this.loadMoreSentinels.changes.subscribe(observe);
+  }
+
+  ngOnDestroy(): void {
+    this.observer?.disconnect();
   }
 }

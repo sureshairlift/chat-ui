@@ -5,10 +5,15 @@ import {
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
 import { SENDERS } from "../../data/senders";
-import {
-  MENTIONS_DATA, CUSTOMER_PORTAL_SESSIONS, AI_UNREAD_SUMMARIES,
-  ACTIVITY_FEED,
-} from "../../data/dashboard";
+// Dashboard mock seeds — commented out so the dashboard reads only from
+// live data. Restore by un-commenting + re-spreading into the readonly
+// fields below if you want the legacy "URGENT" / mentions / activity
+// feed widgets back without a backend.
+//
+// import {
+//   MENTIONS_DATA, CUSTOMER_PORTAL_SESSIONS, AI_UNREAD_SUMMARIES,
+//   ACTIVITY_FEED,
+// } from "../../data/dashboard";
 import { urgencyOf } from "../../data/mode-info";
 import { Conversation, Sender, ConvTask, MentionEntry, PortalSession, AISummary, ActivityItem, UserRole } from "../../models/types";
 
@@ -18,6 +23,7 @@ import { KpiCardComponent } from "../kpi-card/kpi-card.component";
 import { ModeBadgeComponent } from "../mode-badge/mode-badge.component";
 import { DashSectionComponent } from "../dash-section/dash-section.component";
 import { EmptyMiniComponent } from "../empty-mini/empty-mini.component";
+import { HandoffQueueComponent } from "../handoff-queue/handoff-queue.component";
 
 interface OpenTask extends ConvTask {
   convId: string;
@@ -33,7 +39,7 @@ interface ActivityIconStyle { iconName: string; bg: string; text: string; }
  * `<HomeDashboard>` 1:1.
  *
  * Layout sections, top-down:
- *  1. Sticky header with greeting / refresh / auto-refresh / on-duty / role
+ *  1. Sticky header with greeting / refresh / auto-refresh / role
  *  2. Hero priority banner (1 of 5 states based on what's most urgent)
  *  3. KPI strip (4 cards, role-aware)
  *  4. "Today" stat strip
@@ -56,6 +62,7 @@ interface ActivityIconStyle { iconName: string; bg: string; text: string; }
   imports: [
     CommonModule, IconComponent, AvatarComponent, KpiCardComponent,
     ModeBadgeComponent, DashSectionComponent, EmptyMiniComponent,
+    HandoffQueueComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Stretch the host to full height so the inner `flex-1 overflow-y-auto`
@@ -119,10 +126,17 @@ export class HomeDashboardComponent implements OnInit, OnDestroy {
   urgencyOf = urgencyOf;
 
   /* ============= Static data sources ============= */
-  // Pulled from data files; in a real app these would also live in state.
-  readonly mentionsData: MentionEntry[] = MENTIONS_DATA;
-  readonly aiSummaries: Record<string, AISummary> = AI_UNREAD_SUMMARIES;
-  readonly activityFeed: ActivityItem[] = ACTIVITY_FEED;
+  // Empty — the original mock seeds (MENTIONS_DATA / AI_UNREAD_SUMMARIES /
+  // ACTIVITY_FEED) are commented out at the import block above. Each of
+  // these will hydrate from a real endpoint when the corresponding
+  // backend feature lands:
+  //   mentionsData  -> GET /mentions?user_ref=op:2
+  //   aiSummaries   -> GET /channels/<id>/ai-summary
+  //   activityFeed  -> GET /activity?user_ref=op:2
+  // Until then the dashboard widgets render their empty-state UI.
+  readonly mentionsData: MentionEntry[] = [];
+  readonly aiSummaries: Record<string, AISummary> = {};
+  readonly activityFeed: ActivityItem[] = [];
   /** Live portal sessions from state — mutated by takeOver / continueAI /
    *  resolve / reassign actions so the dashboard updates as operators work. */
   get portalSessions(): PortalSession[] { return this.state.portalSessions(); }
@@ -239,6 +253,88 @@ export class HomeDashboardComponent implements OnInit, OnDestroy {
     }
     return n;
   });
+
+  /* ============= Live data sets (chat-service) ============= */
+
+  /** Live handoff queue split by status. The dashboard renders three
+   *  cards for these so the agent sees the same numbers as the queue
+   *  side panel without flipping between views. Each falls back to []
+   *  while loadDashboardLive hasn't run (or in offline mode). */
+  liveAwaitingHandoff = computed(() =>
+    (this.state.liveHandoffs() ?? []).filter((h) => h.status === "pending"),
+  );
+  liveClaimedHandoff = computed(() =>
+    (this.state.liveHandoffs() ?? []).filter((h) => h.status === "claimed"),
+  );
+  liveResolvedToday = computed(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const cutoff = start.getTime();
+    return (this.state.liveHandoffs() ?? []).filter(
+      (h) => h.status === "resolved" && h.resolved_on
+        && new Date(h.resolved_on).getTime() >= cutoff,
+    );
+  });
+  /** Median + max wait time across pending handoffs — surfaces "people
+   *  are waiting too long" without the agent having to skim the list. */
+  liveQueueWaitMinutes = computed(() => {
+    const waits = this.liveAwaitingHandoff()
+      .map((h) => h.wait_minutes ?? 0)
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b);
+    if (waits.length === 0) return { median: 0, max: 0 };
+    const mid = Math.floor(waits.length / 2);
+    const median = waits.length % 2 === 0
+      ? Math.round((waits[mid - 1] + waits[mid]) / 2)
+      : waits[mid];
+    return { median, max: waits[waits.length - 1] };
+  });
+
+  /** Live total unread + per-channel breakdown (sidebar already shows
+   *  the breakdown; dashboard surfaces the headline number for the
+   *  KPI strip and a "channels with unread" count). */
+  liveTotalUnread = computed(() => this.state.liveTotalUnread());
+  liveUnreadChannels = computed(() => {
+    const map = this.state.liveUnreadByChannel() ?? {};
+    return Object.values(map).filter((n) => n > 0).length;
+  });
+
+  /** Live saved-messages count for a "Saved (N)" KPI. */
+  liveSavedCount = computed(() => this.state.liveSavedCount());
+
+  /** Channel-mix breakdown — direct / spaces / customer / ai. Lets the
+   *  dashboard render a small per-type chip strip so the agent knows
+   *  what kinds of conversations they're in. */
+  channelMix = computed(() => {
+    const list = this.state.conversations();
+    const mix = { direct: 0, space: 0, customer: 0, ai: 0, external_group: 0 };
+    for (const c of list) {
+      switch (c.type) {
+        case "external":
+          mix.customer++;
+          break;
+        case "external-group":
+          mix.external_group++;
+          break;
+        case "space":
+          mix.space++;
+          break;
+        default:
+          if (c.isAI) mix.ai++;
+          else mix.direct++;
+      }
+    }
+    return mix;
+  });
+
+  /** Most-recently-active channels (top 5 by last message activity).
+   *  Drives a "Recent activity" card so the agent has a one-click jump
+   *  to wherever conversation is happening right now. */
+  recentActivity = computed(() =>
+    [...this.state.conversations()]
+      .filter((c) => !!c.lastTime)
+      .slice(0, 5),
+  );
 
   filteredFeed = computed<ActivityItem[]>(() => {
     if (this.canHandleCustomerHandoffs) return this.activityFeed; // CS sees everything

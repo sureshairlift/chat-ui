@@ -142,6 +142,10 @@ export interface Message {
   /** Pre-formatted HTML body (used for rich content / mentions / links) */
   html?: string;
   edited?: boolean;
+  /** True when the message was tombstoned by its sender. Renders as a
+   *  muted "This message was deleted by the sender" placeholder in
+   *  place of the body, attachments, reactions, and thread chip. */
+  deleted?: boolean;
   attachments?: Attachment[];
   thread?: ThreadMeta;
   reactions?: Reaction[];

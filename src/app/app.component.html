@@ -66,7 +66,7 @@
             [pinnedActive]="state.showPinned()" [searchActive]="convSearchOpen()"
             [sharedMediaActive]="state.showSharedMedia()" (back)="onHeaderBack()" (close)="state.setActiveConv(null)"
             (toggleFocus)="state.sidebarCollapsed.set(!state.sidebarCollapsed())"
-            (togglePinConv)="state.togglePinConv(conv.id)" (markUnread)="markUnread(conv.id)"
+            (togglePinConv)="onTogglePinConv(conv.id)" (markUnread)="markUnread(conv.id)"
             (newAIChat)="onNewAIChat()" (openInPopup)="openInPopup()" (hideConv)="onHideConv(conv.id)"
             (archiveConv)="onArchiveConv(conv.id)" (leaveSpace)="onLeaveSpace(conv.id)" (blockReport)="onBlockReport()"
             (clearHistory)="onClearHistory(conv.id)" (toggleConvSearch)="toggleConvSearch()"></app-conversation-header>
@@ -132,11 +132,8 @@
           </div>
 
           <div #messagesScroll (scroll)="onMessagesScroll()"
-            class="flex-1 overflow-y-auto scrollable bg-white py-2 relative">
-            <!-- AI catch-me-up banner: shows for unread convs that have an
-                 AI summary prepared, dismissible per session. -->
-            <app-ai-catchup-banner [convId]="conv.id"></app-ai-catchup-banner>
-
+            class="flex-1 overflow-y-auto scrollable bg-white py-2 relative"
+            style="overflow-anchor: none;">
             <!-- Load-earlier sentinel — visible when there are messages
                  outside the current render window. The IntersectionObserver
                  fires loadEarlier() automatically when this scrolls near the
@@ -171,6 +168,60 @@
               </ng-container>
             </ng-container>
 
+            <!-- Bottom sentinel — fires loadNewerMessagesLive when
+                 scrolled into view AND the active conv has more newer
+                 messages to load (windowed view after jump-to-message).
+                 Hidden in the normal "open conv" flow — the cached
+                 list already starts from the latest message.
+                 Two states:
+                  - idle: show a "Newer messages available" pill so the
+                    user knows there's more below before they scroll
+                  - loading: show three pulsing skeleton bubbles so
+                    the bottom of the list looks active during the fetch -->
+            <ng-container *ngIf="msgPaginationActive()?.hasMoreNewer">
+              <div #loadNewerSentinel class="flex items-center justify-center py-3">
+                <span *ngIf="!msgPaginationActive()?.loading"
+                      class="text-[11px] font-medium text-blue-700 bg-blue-50 ring-1 ring-blue-200 rounded-full px-3 py-1 inline-flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M19 12l-7 7-7-7"/>
+                  </svg>
+                  Newer messages below
+                </span>
+                <span *ngIf="msgPaginationActive()?.loading"
+                      class="text-[12px] text-gray-500 inline-flex items-center gap-2">
+                  <span class="inline-block h-3 w-3 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin"></span>
+                  Loading newer messages…
+                </span>
+              </div>
+              <!-- Skeleton bubbles during fetch — gives the bottom a
+                   sense of "content arriving" instead of an empty
+                   gap with just a spinner. -->
+              <div *ngIf="msgPaginationActive()?.loading" class="px-6 space-y-3 pb-3">
+                <div class="flex items-start gap-2">
+                  <div class="h-7 w-7 rounded-full bg-gray-200 animate-pulse shrink-0"></div>
+                  <div class="space-y-1.5 max-w-[60%]">
+                    <div class="h-3 w-24 rounded bg-gray-200 animate-pulse"></div>
+                    <div class="h-3 w-48 rounded bg-gray-200 animate-pulse"></div>
+                  </div>
+                </div>
+                <div class="flex items-start gap-2">
+                  <div class="h-7 w-7 rounded-full bg-gray-200 animate-pulse shrink-0"></div>
+                  <div class="space-y-1.5 max-w-[55%]">
+                    <div class="h-3 w-32 rounded bg-gray-200 animate-pulse"></div>
+                    <div class="h-3 w-40 rounded bg-gray-200 animate-pulse"></div>
+                    <div class="h-3 w-28 rounded bg-gray-200 animate-pulse"></div>
+                  </div>
+                </div>
+              </div>
+            </ng-container>
+
+            <!-- AI catch-me-up banner — sits at the bottom of the
+                 message list (just above the composer) so it appears
+                 right where the user is reading the freshest messages.
+                 Dismissible per session; on-demand fetch happens
+                 inside the component. -->
+            <app-ai-catchup-banner [convId]="conv.id"></app-ai-catchup-banner>
+
             <!-- Scroll-to-bottom floating button — appears when scrolled up -->
             <button *ngIf="!isAtBottom()" (click)="scrollToBottom()" title="Scroll to latest"
               class="sticky bottom-4 ml-auto mr-4 mt-2 flex items-center justify-center w-9 h-9 rounded-full bg-white border border-gray-200 shadow-md hover:bg-gray-50 text-gray-700 transition z-10"
@@ -184,16 +235,35 @@
           <app-composer [convId]="conv.id" [isAI]="!!conv.isAI" [isMobile]="bp.isMobile()"
             [lastMessageFromOther]="lastMessageFromOther()" [replyingTo]="replyingTo()"
             [draft]="state.drafts()[conv.id]?.html || ''" (send)="onSend($event)"
+            (slashCommand)="onSlashCommand($event)"
             (cancelReply)="state.setReplyingTo(null, null)" (draftChange)="onDraftChange($event)"></app-composer>
         </ng-container>
         <ng-template #emptyState>
-          <!-- When no conversation is selected, the right pane shows the operations
-               dashboard (handoffs, AI insights, tasks) instead of an empty illustration. -->
-          <app-home-dashboard [isMobile]="bp.isMobile()" (back)="state.setView('home')"
-            (openConv)="onPickFromSearch($event)" (markConvRead)="onMarkConvRead($event)"
-            (markAllRead)="state.markAllRead()" (goToMentions)="state.setView('mentions')" (goToTasks)="onGoToTasks()"
-            (takeOver)="onTakeOverSession($event)" (continueAI)="onContinueAI($event)"
-            (resolveSession)="onResolveSession($event)" (reassign)="onReassignSession($event)"></app-home-dashboard>
+          <!-- No conversation selected — show a calm empty state instead
+               of the dashboard. The dashboard view is still reachable
+               via state.setView('dashboard') for callers that want it. -->
+          <div class="flex-1 flex flex-col items-center justify-center text-center px-6 py-16 bg-white">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 flex items-center justify-center mb-4">
+              <app-icon name="message-square" [size]="28" class="text-purple-600"></app-icon>
+            </div>
+            <h2 class="text-[18px] font-medium text-gray-900">No conversation selected</h2>
+            <p class="text-[13px] text-gray-500 mt-2 max-w-sm leading-relaxed">
+              Pick a conversation from the list to start reading, or use
+              search to jump to a specific message.
+            </p>
+            <div class="flex items-center gap-2 mt-6">
+              <button (click)="state.openSearch()"
+                class="text-[13px] inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700">
+                <app-icon name="search" [size]="14"></app-icon>
+                Search
+              </button>
+              <button (click)="onNewAIChat()"
+                class="text-[13px] inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700">
+                <app-icon name="sparkles" [size]="14"></app-icon>
+                New AI chat
+              </button>
+            </div>
+          </div>
         </ng-template>
       </div>
 
@@ -226,6 +296,10 @@
 
       <!-- Custom-status editor modal — emoji + text + auto-clear duration -->
       <app-status-editor *ngIf="state.showStatusEditor()" (closed)="state.closeStatusEditor()"></app-status-editor>
+
+      <!-- Fullscreen message viewer — opened from any bubble's
+           "Expand" menu item via state.openMessageFullscreen(msg). -->
+      <app-message-fullscreen></app-message-fullscreen>
 
       <!-- File preview overlay — fullscreen Google Chat-style lightbox.
            Listens to FilePreviewService; renders nothing when nothing is

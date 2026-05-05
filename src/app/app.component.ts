@@ -37,6 +37,7 @@ import { HomeDashboardComponent } from "./components/home-dashboard/home-dashboa
 import { ConvPopupComponent } from "./components/conv-popup/conv-popup.component";
 import { AICatchupBannerComponent } from "./components/ai-catchup-banner/ai-catchup-banner.component";
 import { StatusEditorComponent } from "./components/status-editor/status-editor.component";
+import { MessageFullscreenComponent } from "./components/message-fullscreen/message-fullscreen.component";
 import { FilePreviewOverlayComponent } from "./components/file-preview-overlay/file-preview-overlay.component";
 
 interface DayGroup { key: string; label: string; messages: Message[]; }
@@ -76,7 +77,7 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
     ThreadPanelComponent, BoardPanelComponent, FollowingPanelComponent,
     TasksPanelComponent, PinnedPanelComponent, SharedMediaPanelComponent,
     SearchModalComponent, HomeDashboardComponent, ConvPopupComponent,
-    AICatchupBannerComponent, StatusEditorComponent,
+    AICatchupBannerComponent, StatusEditorComponent, MessageFullscreenComponent,
     FilePreviewOverlayComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -124,10 +125,23 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
   private static readonly MSG_PAGE_SIZE = 50;
   msgWindowSize = signal<number>(AppComponent.MSG_INITIAL_WINDOW);
   /** True when the user has more older messages they could load. Drives the
-   *  visibility of the "Load earlier" button + sentinel. */
-  hasMoreEarlier = computed<boolean>(() =>
-    this.state.currentMessages().length > this.msgWindowSize()
-  );
+   *  visibility of the "Load earlier" button + sentinel. Two cases:
+   *   - local cache holds older messages outside the render window
+   *     (the legacy mock-data path); OR
+   *   - live mode + the server still has older pages to send.
+   *  Without the second branch the sentinel never appears once the
+   *  initial fetch matches the window size, and the observer never
+   *  fires, so older fetches don't happen. */
+  hasMoreEarlier = computed<boolean>(() => {
+    if (this.state.currentMessages().length > this.msgWindowSize()) return true;
+    if (!this.state.live()) return false;
+    const id = this.state.activeConv();
+    if (!id) return false;
+    const pag = this.state.msgPagination()[id];
+    // Default: assume the server has more until we get a short page back
+    // and explicitly flip hasMoreOlder=false.
+    return !pag || pag.hasMoreOlder !== false;
+  });
   /** Total count of older messages currently outside the render window. */
   hiddenEarlierCount = computed<number>(() =>
     Math.max(0, this.state.currentMessages().length - this.msgWindowSize())
@@ -212,15 +226,60 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
       requestAnimationFrame(() => this.measurePaneWidth());
     });
 
-    // Auto-scroll the messages pane to the bottom whenever the active conv
-    // changes or a new message lands. Without this, sending a message leaves
-    // the viewport scrolled to wherever the user last was.
+    // Auto-scroll the messages pane on conv switch, and on message-list
+    // changes ONLY when the user was already pinned to the bottom. Keeps
+    // two important UX behaviours separate:
+    //
+    //   - Switching to a new conv → jump to latest (always).
+    //   - Sending a message / new live message arrives WHILE you're at
+    //     the bottom → keep you at the bottom (auto-follow).
+    //   - Loading older messages via the top sentinel OR newer messages
+    //     via the bottom sentinel while you're scrolled up reading
+    //     prior content → DO NOT yank the viewport to the bottom.
+    let lastConvId: string | null = null;
+    let lastLen = 0;
     effect(() => {
-      this.state.activeConv();
+      const convId = this.state.activeConv();
       const msgs = this.state.currentMessages();
-      // Touch length so the effect fires on append
-      void msgs.length;
-      requestAnimationFrame(() => this.scrollToBottom("auto"));
+      const len = msgs.length;
+      const convChanged = convId !== lastConvId;
+      const grew = !convChanged && len > lastLen;
+      lastConvId = convId;
+      lastLen = len;
+      if (convChanged) {
+        // Conv switch — jump instantly. Smooth here would feel wrong
+        // (you're moving to a different conversation, you want to
+        // start at the bottom immediately).
+        requestAnimationFrame(() => this.scrollToBottom("auto"));
+        return;
+      }
+      // Skip auto-follow if pagination is in flight. The user just
+      // triggered loadOlder / loadNewer to read context — pulling
+      // them back to the bottom would undo what they asked for.
+      // Each pagination path restores its own scroll position.
+      const pag = convId ? this.state.msgPagination()[convId] : undefined;
+      if (pag?.loading) return;
+      // Skip auto-follow when we're in a windowed view (the user
+      // landed mid-channel via jump-to-message and there are still
+      // unloaded newer pages below). The "bottom" of what's rendered
+      // isn't the bottom of the channel, so snapping there would
+      // both feel wrong and fight focusMessage's scrollIntoView.
+      // Auto-follow resumes once they scroll down through every
+      // newer page — at which point hasMoreNewer flips to false.
+      if (pag?.hasMoreNewer) return;
+      // Append-only auto-follow: track the latest message when the
+      // user is pinned to the bottom. The `isAtBottom` signal
+      // captures intent at the last scroll event — exactly what we
+      // want here (a message landing while the user was at the
+      // bottom should keep them there; pagination loads are
+      // already filtered out by the pag.loading gate above).
+      // Smooth (RAF / cubic-out) feels far more polished than the
+      // native "auto" snap. The RAF handler cancels any in-flight
+      // animation so rapid AI-streaming token frames don't stack
+      // into a jittery animation.
+      if (grew && this.isAtBottom()) {
+        requestAnimationFrame(() => this.scrollToBottom("smooth"));
+      }
     });
 
     // Close the mobile drawer whenever the user navigates from inside the
@@ -420,6 +479,42 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
       this.resizeObserver.observe(this.rightPane.nativeElement);
     }
     this.measurePaneWidth();
+
+    // Live-backend hydration. Reads the JWT (set by the legacy CRM via
+    // localStorage 'x-token' or, in dev, by pasting one into the
+    // URL hash like #jwt=<token>). When present, swap the mock data for
+    // the real /api/v2/chat-service backend; otherwise the existing
+    // INITIAL_CONVERSATIONS / INITIAL_MESSAGES seed continues to render
+    // so the UI never goes blank.
+    void this.bootstrapLive();
+  }
+
+  private async bootstrapLive(): Promise<void> {
+    if (typeof window === "undefined") return;
+    // Convenience: ?jwt=... in the URL puts the token into localStorage
+    // for the IdentityService to pick up. Useful for sharing dev links.
+    const fromQuery = new URL(window.location.href).searchParams.get("jwt");
+    if (fromQuery) {
+      try { localStorage.setItem("x-token", fromQuery); } catch {}
+      const url = new URL(window.location.href);
+      url.searchParams.delete("jwt");
+      window.history.replaceState({}, "", url.toString());
+    }
+    const stored = (() => {
+      try { return localStorage.getItem("x-token"); } catch { return null; }
+    })();
+    if (!stored) {
+      // No identity wired — stay on mock data. Surface a single console
+      // hint so devs know how to flip the switch.
+      // eslint-disable-next-line no-console
+      console.info("[airlift-chat] No JWT found in localStorage 'x-token'; running on mock data.");
+      return;
+    }
+    const ok = await this.state.connect();
+    if (!ok) {
+      // eslint-disable-next-line no-console
+      console.warn("[airlift-chat] live data hydration failed; staying on mock data");
+    }
   }
 
   ngOnDestroy(): void {
@@ -434,42 +529,134 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
    *  (or torn down if there's nothing left to load). The sentinel comes and
    *  goes via *ngIf, so a static ViewChild won't suffice. */
   ngAfterViewChecked(): void {
-    const el = this.loadEarlierSentinel?.nativeElement ?? null;
-    if (el === this.observedSentinelEl) return;
-    this.earlierObserver?.disconnect();
-    this.earlierObserver = undefined;
-    this.observedSentinelEl = el;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    this.earlierObserver = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) this.loadEarlier();
-        }
-      },
-      { root: this.messagesScroll?.nativeElement ?? null, rootMargin: "200px 0px 0px 0px" },
-    );
-    this.earlierObserver.observe(el);
+    // Top sentinel — loads OLDER messages when scrolled near the top.
+    const top = this.loadEarlierSentinel?.nativeElement ?? null;
+    if (top !== this.observedSentinelEl) {
+      this.earlierObserver?.disconnect();
+      this.earlierObserver = undefined;
+      this.observedSentinelEl = top;
+      if (top && typeof IntersectionObserver !== "undefined") {
+        this.earlierObserver = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (e.isIntersecting) this.loadEarlier();
+            }
+          },
+          { root: this.messagesScroll?.nativeElement ?? null, rootMargin: "200px 0px 0px 0px" },
+        );
+        this.earlierObserver.observe(top);
+      }
+    }
+
+    // Bottom sentinel — loads NEWER messages when scrolled near the
+    // bottom AND the active conv is in a windowed view (after a
+    // jump-to-message). On a fresh "open conv" load there's no newer
+    // page to fetch — the sentinel won't be rendered (template gates
+    // on hasMoreNewer).
+    const bot = this.loadNewerSentinel?.nativeElement ?? null;
+    if (bot !== this.observedNewerSentinelEl) {
+      this.newerObserver?.disconnect();
+      this.newerObserver = undefined;
+      this.observedNewerSentinelEl = bot;
+      if (bot && typeof IntersectionObserver !== "undefined") {
+        this.newerObserver = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (e.isIntersecting) this.loadNewer();
+            }
+          },
+          // 400px lead so the fetch begins well before the user
+          // actually reaches the bottom — spinner + skeleton are
+          // already in flight by the time they scroll there, which
+          // hides the network round-trip behind their natural scroll.
+          { root: this.messagesScroll?.nativeElement ?? null, rootMargin: "0px 0px 400px 0px" },
+        );
+        this.newerObserver.observe(bot);
+      }
+    }
   }
   private observedSentinelEl: HTMLElement | null = null;
+  @ViewChild("loadNewerSentinel") loadNewerSentinel?: ElementRef<HTMLElement>;
+  private newerObserver?: IntersectionObserver;
+  private observedNewerSentinelEl: HTMLElement | null = null;
+
+  /** Convenience: pagination state for the active conv (template reads
+   *  this for the bottom sentinel + spinner). */
+  msgPaginationActive = computed(() => {
+    const id = this.state.activeConv();
+    if (!id) return null;
+    return this.state.msgPagination()[id] ?? null;
+  });
 
   /** Expand the window by one page. Preserves scroll position by snapshotting
    *  the scroll container's scrollHeight before the new messages render and
-   *  restoring after — without this, the user's viewport jumps to the top. */
+   *  restoring after — without this, the user's viewport jumps to the top.
+   *
+   *  When the local cache is exhausted (window already covers every loaded
+   *  message), this also fires an HTTP fetch for an older page so the
+   *  channel keeps scrolling backwards through the entire history. */
   loadEarlier(): void {
     if (this.isLoadingEarlier) return;
-    if (!this.hasMoreEarlier()) return;
-    this.isLoadingEarlier = true;
     const el = this.messagesScroll?.nativeElement;
     const prevHeight = el?.scrollHeight ?? 0;
     const prevTop    = el?.scrollTop ?? 0;
-    this.msgWindowSize.update((n) => n + AppComponent.MSG_PAGE_SIZE);
-    requestAnimationFrame(() => {
-      if (el) {
-        const delta = el.scrollHeight - prevHeight;
-        el.scrollTop = prevTop + delta;
-      }
-      this.isLoadingEarlier = false;
+
+    // First, expand the local window if there are unrendered older
+    // messages already in the cache. NB: hasMoreEarlier is now also
+    // true when only the server has more, so check the cache vs
+    // window directly here instead of routing through hasMoreEarlier.
+    const cacheHasMore = this.state.currentMessages().length > this.msgWindowSize();
+    if (cacheHasMore) {
+      this.isLoadingEarlier = true;
+      this.msgWindowSize.update((n) => n + AppComponent.MSG_PAGE_SIZE);
+      requestAnimationFrame(() => {
+        if (el) {
+          const delta = el.scrollHeight - prevHeight;
+          el.scrollTop = prevTop + delta;
+        }
+        this.isLoadingEarlier = false;
+      });
+      return;
+    }
+
+    // Local cache exhausted — go to the backend for an older page.
+    const convId = this.state.activeConv();
+    if (!convId || !this.state.live()) return;
+    const pag = this.state.msgPagination()[convId];
+    if (pag && pag.hasMoreOlder === false) return;
+    this.isLoadingEarlier = true;
+    void this.state.loadOlderMessagesLive(convId).then(() => {
+      // Bump the window so the freshly-prepended page renders.
+      this.msgWindowSize.update((n) => n + AppComponent.MSG_PAGE_SIZE);
+      requestAnimationFrame(() => {
+        if (el) {
+          const delta = el.scrollHeight - prevHeight;
+          el.scrollTop = prevTop + delta;
+        }
+        this.isLoadingEarlier = false;
+      });
     });
+  }
+
+  /** Symmetric: bottom of the list is hit AND we're in a windowed view
+   *  (jump-to-message put the caller in the middle). Pages a NEWER
+   *  batch and appends.
+   *
+   *  No explicit scrollTop restore is needed here: appending content
+   *  BELOW the viewport doesn't shift any rendered element above the
+   *  user's view, so the browser keeps `scrollTop` stable for free.
+   *  The auto-scroll effect is gated on `pag.hasMoreNewer` (windowed
+   *  view) and `pag.loading` (in-flight) so it can't race us. An
+   *  explicit restore on .then() would actually HURT — the user
+   *  often keeps scrolling during the network round-trip, and
+   *  yanking them back to wherever the observer fired is the source
+   *  of the "not smooth" feeling. */
+  loadNewer(): void {
+    const convId = this.state.activeConv();
+    if (!convId || !this.state.live()) return;
+    const pag = this.state.msgPagination()[convId];
+    if (!pag || !pag.hasMoreNewer || pag.loading) return;
+    void this.state.loadNewerMessagesLive(convId);
   }
 
   /* =================== Messages scroll wiring =================== */
@@ -478,14 +665,65 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     const el = this.messagesScroll?.nativeElement;
     if (!el) return;
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-    this.isAtBottom.set(dist < 60);
+    const wasAtBottom = this.isAtBottom();
+    const nowAtBottom = dist < 60;
+    this.isAtBottom.set(nowAtBottom);
+    // When the user scrolls down to the latest message, mark the channel
+    // read on the backend. Only fire on the EDGE (was-not-bottom →
+    // is-bottom) to avoid one POST per scroll-pixel. Live mode only —
+    // mock data uses a different read tracker.
+    if (!wasAtBottom && nowAtBottom && this.state.live()) {
+      void this.state.markActiveConvReadLive();
+    }
   }
+
+  /** Frame handle so a new scroll request cancels the previous one
+   *  instead of stacking — without this rapid-fire scroll calls (e.g.
+   *  during AI streaming) compound into a jittery animation. */
+  private scrollAnimFrame = 0;
 
   scrollToBottom(behavior: ScrollBehavior = "smooth"): void {
     const el = this.messagesScroll?.nativeElement;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior });
-    this.isAtBottom.set(true);
+    // Cancel any in-flight smooth scroll first.
+    if (this.scrollAnimFrame) {
+      cancelAnimationFrame(this.scrollAnimFrame);
+      this.scrollAnimFrame = 0;
+    }
+    const target = el.scrollHeight - el.clientHeight;
+    if (behavior === "auto") {
+      el.scrollTop = target;
+      this.isAtBottom.set(true);
+      return;
+    }
+    // Custom RAF animation — ease-out-cubic over 380ms. Native
+    // `behavior: 'smooth'` is too fast (browsers vary 100-200ms) and
+    // doesn't decelerate, which makes it feel like a snap on long
+    // scrolls. This curve matches what Google Chat / Slack use.
+    const start = el.scrollTop;
+    const distance = target - start;
+    if (Math.abs(distance) < 2) {
+      el.scrollTop = target;
+      this.isAtBottom.set(true);
+      return;
+    }
+    // 280ms for short jumps, up to 480ms for long ones — keeps the
+    // animation feeling responsive without dragging on big scrolls.
+    const duration = Math.min(480, Math.max(280, Math.abs(distance) * 0.4));
+    const startTime = performance.now();
+    const ease = (t: number) => 1 - Math.pow(1 - t, 3); // cubic-out
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / duration);
+      el.scrollTop = start + distance * ease(t);
+      if (t < 1) {
+        this.scrollAnimFrame = requestAnimationFrame(step);
+      } else {
+        this.scrollAnimFrame = 0;
+        this.isAtBottom.set(true);
+      }
+    };
+    this.scrollAnimFrame = requestAnimationFrame(step);
   }
 
   /** Briefly highlight + scroll a message into view. Called when navigating
@@ -578,7 +816,10 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
   /* =================== Day-grouped message render =================== */
 
   dayGroups = computed<DayGroup[]>(() => {
-    const msgs = this.state.currentMessages();
+    // currentMessagesWithStreaming includes any in-flight AI bubble so it
+    // renders inline while blocks stream in. Falls back to the persisted
+    // list on non-AI channels (where streamingByConv is empty).
+    const msgs = this.state.currentMessagesWithStreaming();
     const q = this.convSearchQuery().trim().toLowerCase();
     const matched = q
       ? msgs.filter((m) => {
@@ -597,7 +838,11 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     const groups: DayGroup[] = [];
     let lastKey: string | null = null;
     for (const m of filtered) {
-      const key = getDayKey(m.time);
+      // Live messages carry a real ISO timestamp on m.api.created_on;
+      // mock messages don't, and getDayKey falls back to its legacy
+      // string parser. Either way the key is opaque to this template.
+      const iso = (m as { api?: { created_on?: string } })?.api?.created_on;
+      const key = getDayKey(m.time, iso);
       if (key !== lastKey) {
         groups.push({ key, label: formatDayLabel(key), messages: [] });
         lastKey = key;
@@ -633,12 +878,14 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     if (!target) return null;
     const senderId = target.sender || "";
     const senderName = (SENDERS[senderId]?.name) || senderId;
-    return {
-      msgId: r.msgId,
-      senderName,
-      senderId,
-      text: target.text || (target.html ? target.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : ""),
-    };
+    // Strip HTML tags from EITHER source — for live messages
+    // adaptMessage sets `text` to the raw markdown/HTML body of
+    // markdown-formatted messages. The composer pill + quoted snippet
+    // both want a clean plain-text version. Fall back to html if text
+    // is empty, then strip the same way.
+    const raw = (target.text || target.html || "").trim();
+    const text = raw.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    return { msgId: r.msgId, senderName, senderId, text };
   });
 
   threadParent = computed<Message | null>(() => {
@@ -656,28 +903,130 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     this.state.setReplyingTo(e.msg.id, conv.id);
   }
 
-  onSend(payload: { html: string; text: string }): void {
+  /** Slash-command dispatch — composer parses leading `/word` and emits
+   *  here. We route to the corresponding LiveDataService transition.
+   *  Unknown commands toast the user with the available list. Live mode
+   *  only — mock-data demos toast "not available". */
+  async onSlashCommand(e: { command: string; args: string }): Promise<void> {
     const conv = this.state.currentConv();
     if (!conv) return;
-    const id = `m-${Date.now()}`;
+    if (!this.state.live()) {
+      this.toast.show('Slash commands require a live backend.');
+      return;
+    }
+    const id = conv.id;
+    switch (e.command) {
+      case 'handoff':
+      case 'request-human':
+      case 'human': {
+        const res = await this.state['liveData']?.requestHuman(id, e.args || undefined);
+        this.toast.show(res?.ok ? 'Bringing in the support team.' : 'Handoff failed.');
+        break;
+      }
+      case 'take-over':
+      case 'takeover':
+      case 'claim': {
+        const res = await this.state['liveData']?.takeOver(id);
+        this.toast.show(res?.ok ? `Took over (${res.phase})` : 'Take-over failed.');
+        break;
+      }
+      case 'return-to-ai':
+      case 'returntoai':
+      case 'release': {
+        const res = await this.state['liveData']?.returnToAI(id);
+        this.toast.show(res?.ok ? 'Handed back to AI.' : 'Return to AI failed.');
+        break;
+      }
+      case 'resolve':
+      case 'close': {
+        const res = await this.state['liveData']?.resolveChannel(id);
+        this.toast.show(res?.ok ? 'Conversation resolved.' : 'Resolve failed.');
+        break;
+      }
+      case 'note':
+      case 'private': {
+        // Agents-only note — visibility=agents_only on the message so
+        // the customer never sees it. Useful inside ai_assisted /
+        // support_direct channels for internal coordination.
+        if (!e.args) {
+          this.toast.show('Usage: /note <message visible only to agents>');
+          break;
+        }
+        await this.state.sendMessageLive(id, {
+          content: e.args,
+          content_format: 'text',
+          visibility: 'agents_only',
+          client_message_id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        });
+        this.toast.show('Note sent (visible to agents only).');
+        break;
+      }
+      case 'help':
+      case 'commands': {
+        this.toast.show('Try: /handoff, /take-over, /return-to-ai, /resolve, /note <text>');
+        break;
+      }
+      default:
+        this.toast.show(`Unknown command "/${e.command}". Try /help`);
+    }
+  }
+
+  onSend(payload: { html: string; text: string; attachments?: { kind: 'file'|'image'|'video'|'audio'; url: string; filename: string; size?: number; mime?: string }[] }): void {
+    const conv = this.state.currentConv();
+    if (!conv) return;
+
     const stripped = payload.html.replace(/<[^>]+>/g, "").trim();
+    const isRich = stripped !== payload.text
+      || /<(strong|em|u|s|code|ul|ol|li|table|h[1-3]|blockquote|span|a)\b/i.test(payload.html);
+
+    // Live mode → route through chat-state's live send. Handles BOTH
+    // normal channels (REST persist + FCM fanout) AND AI channels
+    // (SSE stream from Python via internal/handlers/ai_dispatch.go).
+    // The streaming bubble appears inline via streamingByConv.
+    if (this.state.live()) {
+      // Carry the active reply target into the wire payload so the
+      // backend persists `quoted` on the new message and other clients
+      // render the "Replying to X" pill. replyingTo() resolves to the
+      // hydrated parent (sender display name + snippet) — we map back
+      // to the wire shape (sender = user_ref, snippet = text). The
+      // message_id we don't have on the legacy mock branch but DO have
+      // here via the original replyingTo state.
+      const replyState = this.state.replyingTo();
+      const replyHydrated = this.replyingTo();
+      const quoted = replyState && replyHydrated ? {
+        message_id: replyState.msgId,
+        sender: replyHydrated.senderId, // user_ref
+        snippet: replyHydrated.text.slice(0, 200),
+      } : undefined;
+
+      void this.state.sendMessageLive(conv.id, {
+        content: isRich ? payload.html : payload.text,
+        content_format: isRich ? "markdown" : "text",
+        quoted,
+        attachments: payload.attachments,
+        // client_message_id is the idempotency key — chat-service catches
+        // duplicate sends from a flaky network and returns the existing
+        // _id rather than inserting twice.
+        client_message_id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      });
+      this.state.clearDraft(conv.id);
+      this.state.setReplyingTo(null, null);
+      return;
+    }
+
+    // Mock-data fallback path — kept so the demo without a backend
+    // still renders a fake reply on AI channels.
+    const id = `m-${Date.now()}`;
     const msg: Message = {
       id, sender: "me", time: "now",
-      ...(stripped !== payload.text || /<(strong|em|u|s|code|ul|ol|li|table|h[1-3]|blockquote|span|a)\b/i.test(payload.html)
-        ? { html: payload.html }
-        : { text: payload.text }),
+      ...(isRich ? { html: payload.html } : { text: payload.text }),
     };
     this.state.appendMessage(conv.id, msg);
     this.state.clearDraft(conv.id);
     this.state.setReplyingTo(null, null);
-
-    // AI auto-response — when the active conversation is an AI chat, generate
-    // a contextual fake reply based on keywords in the user's message.
     if (conv.isAI) {
       const aiMsg = this.buildAIReply(payload.text);
-      setTimeout(() => {
-        this.state.appendMessage(conv.id, aiMsg);
-      }, 600);
+      setTimeout(() => this.state.appendMessage(conv.id, aiMsg), 600);
     }
   }
 
@@ -765,12 +1114,20 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
   }
 
   /** Picked a message search result — open the conv AND scroll/highlight
-   *  the matching message. The slight delay lets the conv pane mount and
-   *  render its messages before we ask focusMessage to find one by ID. */
+   *  the matching message. In live mode we replace the cached window with
+   *  a "messages around anchor" fetch so the bubble exists before
+   *  focusMessage tries to find it. The 100ms timeout still covers the
+   *  layout pass. */
   onPickMessageFromSearch(e: { convId: string; msgId: string }): void {
     if (this.state.view() === "dashboard") this.state.setView("home");
     this.state.setActiveConv(e.convId);
-    setTimeout(() => this.focusMessage(e.msgId), 100);
+    if (this.state.live()) {
+      void this.state.loadMessagesAroundLive(e.convId, e.msgId).then(() => {
+        setTimeout(() => this.focusMessage(e.msgId), 100);
+      });
+    } else {
+      setTimeout(() => this.focusMessage(e.msgId), 100);
+    }
   }
 
   onNewAIChat(): void { this.state.setActiveConv("ai-new"); }
@@ -848,10 +1205,44 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     this.toast.show("Marked as unread");
   }
 
-  /* ---- Conv-level header menu actions (demo: most just toast) ---- */
+  /* ---- Conv-level header menu actions ---- */
+
+  /** Toggle the per-user pin flag for a conversation. Routes through
+   *  PUT /channels/:id/action when live, falls back to local-only
+   *  flip in offline/demo mode. */
+  onTogglePinConv(id: string): void {
+    if (this.state.live()) {
+      void this.state.togglePinConvLive(id);
+    } else {
+      this.state.togglePinConv(id);
+    }
+  }
+
   onHideConv(_id: string): void   { this.toast.show("Conversation hidden"); }
-  onArchiveConv(_id: string): void{ this.toast.show("Conversation archived"); }
-  onLeaveSpace(_id: string): void { this.toast.show("Left space"); }
+
+  /** Archive (or unarchive) a conversation for the caller. Per-user
+   *  flag on the channel_member row — other members are unaffected. */
+  onArchiveConv(id: string): void {
+    if (!this.state.live()) {
+      this.toast.show("Conversation archived");
+      return;
+    }
+    void this.state.archiveConvLive(id).then((ok) =>
+      this.toast.show(ok ? "Conversation archived" : "Failed to archive"),
+    );
+  }
+
+  /** Leave a space — soft-removes the caller's channel_member row. */
+  onLeaveSpace(id: string): void {
+    if (!this.state.live()) {
+      this.toast.show("Left space");
+      return;
+    }
+    void this.state.leaveConvLive(id).then((ok) =>
+      this.toast.show(ok ? "Left space" : "Failed to leave"),
+    );
+  }
+
   onBlockReport(): void           { this.toast.show("Reported & blocked"); }
   onClearHistory(_id: string): void {
     if (confirm("Clear all messages in this chat?")) {

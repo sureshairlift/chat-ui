@@ -8,9 +8,12 @@
       </div>
     </ng-container>
 
-    <!-- AI rich/text — different layout (left-aligned, sparkle avatar, AI chip) -->
+    <!-- AI rich/text — different layout (left-aligned, sparkle avatar, AI chip).
+         Renders the new block protocol when the message has `blocks[]`
+         (LiveMessage from the backend) AND falls back to the legacy
+         ai-chart/list/rated dispatch for mock-data messages. -->
     <ng-template #nonSystem>
-      <ng-container *ngIf="isAIRich || isAIText; else regular">
+      <ng-container *ngIf="isAIRich || isAIText || hasBlocks; else regular">
         <div class="group flex gap-3 px-3 sm:px-6 py-1">
           <div class="w-9 shrink-0 flex justify-center pt-1">
             <div *ngIf="showAvatar"
@@ -27,13 +30,28 @@
               </span>
               <span class="text-[11px] text-gray-500">{{ msg.time }}</span>
             </div>
-            <app-ai-chart-message *ngIf="msg.type === 'ai-chart'" [msg]="msg"></app-ai-chart-message>
-            <app-ai-list-message *ngIf="msg.type === 'ai-list'" [msg]="msg"></app-ai-list-message>
-            <app-ai-rated-message *ngIf="msg.type === 'ai-rated'" [msg]="msg"></app-ai-rated-message>
-            <div *ngIf="msg.type === 'ai-text'"
-              class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-lg text-[14px] leading-relaxed text-gray-900 whitespace-pre-wrap">
-              {{ msg.text }}
-            </div>
+
+            <!-- New block protocol (preferred when present). -->
+            <ng-container *ngIf="hasBlocks; else legacyAi">
+              <div class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-2xl space-y-2">
+                <app-block-renderer *ngFor="let b of blocks; trackBy: trackBlock"
+                                    [block]="b"
+                                    (action)="onBlockAction($event)"
+                                    (submit)="onBlockFormSubmit($event)">
+                </app-block-renderer>
+              </div>
+            </ng-container>
+
+            <!-- Legacy mock-data path — kept until all components migrate. -->
+            <ng-template #legacyAi>
+              <app-ai-chart-message *ngIf="msg.type === 'ai-chart'" [msg]="msg"></app-ai-chart-message>
+              <app-ai-list-message *ngIf="msg.type === 'ai-list'" [msg]="msg"></app-ai-list-message>
+              <app-ai-rated-message *ngIf="msg.type === 'ai-rated'" [msg]="msg"></app-ai-rated-message>
+              <div *ngIf="msg.type === 'ai-text'"
+                class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-lg text-[14px] leading-relaxed text-gray-900 whitespace-pre-wrap">
+                {{ msg.text }}
+              </div>
+            </ng-template>
           </div>
         </div>
       </ng-container>
@@ -85,8 +103,12 @@
             <!-- Standard bubble -->
             <ng-template #bubble>
               <div [class]="bubbleClass">
-                <!-- Quoted reply -->
-                <div *ngIf="msg.type === 'quote' && msg.quoted"
+                <!-- Quoted reply — renders whenever the message has a
+                     quoted parent (live messages set msg.quoted via the
+                     adapter; mock-data messages of type='quote' also
+                     populate it). The chip sits above the bubble body
+                     as a compact "Replying to X: snippet" pill. -->
+                <div *ngIf="msg.quoted && !msg.deleted"
                   class="text-[12px] mb-1.5 pb-1.5 border-b border-black/5">
                   <div class="font-medium text-gray-700 flex items-center gap-1">
                     <app-avatar *ngIf="msg.quoted.senderId && quotedSender" [user]="quotedSender" [size]="14">
@@ -98,7 +120,7 @@
                 </div>
 
                 <!-- Edit mode -->
-                <div *ngIf="editing(); else readOnly" class="flex flex-col gap-2 min-w-[220px]">
+                <div *ngIf="editing() && !msg.deleted; else readOnly" class="flex flex-col gap-2 min-w-[220px]">
                   <textarea #editArea [ngModel]="editValue()" (ngModelChange)="editValue.set($event)"
                     (keydown.escape)="cancelEdit()" (keydown.meta.enter)="submitEdit()"
                     (keydown.control.enter)="submitEdit()" [rows]="editRows()"
@@ -112,20 +134,41 @@
                   </div>
                 </div>
 
-                <!-- Read-only: html or text -->
+                <!-- Read-only: html or text. The `message-body-scroll`
+                     wrapper enables a horizontal scrollbar when a child
+                     (long URL, code block, wide table, image) doesn't
+                     wrap inside the bubble's max width. The inner div
+                     keeps `break-words` so prose still wraps normally;
+                     wide elements that explicitly resist wrapping are
+                     the only ones that trigger the scroll. -->
                 <ng-template #readOnly>
-                  <div *ngIf="msg.html; else textOnly" class="text-[14px] leading-[1.45] break-words message-html"
-                    [innerHTML]="msg.html | safeHtml">
+                  <!-- Deleted placeholder takes precedence over the body —
+                       the original content is gone from the backend, so
+                       there's nothing to render. Italic + muted matches
+                       the convention WhatsApp / Slack / Google Chat use
+                       so the row reads as "tombstone, not message". -->
+                  <div *ngIf="msg.deleted; else liveBody"
+                       class="text-[13px] italic text-gray-500 inline-flex items-center gap-1.5">
+                    <app-icon name="trash-2" [size]="12" class="text-gray-400"></app-icon>
+                    This message was deleted by the sender
                   </div>
-                  <ng-template #textOnly>
-                    <div class="text-[14px] leading-[1.45] whitespace-pre-wrap break-words"
-                      [innerHTML]="msg.text | renderText">
+                  <ng-template #liveBody>
+                    <div class="message-body-scroll max-w-full">
+                      <div *ngIf="msg.html; else textOnly" class="text-[14px] leading-[1.45] break-words message-html"
+                        [innerHTML]="msg.html | safeHtml">
+                      </div>
+                      <ng-template #textOnly>
+                        <div class="text-[14px] leading-[1.45] whitespace-pre-wrap break-words"
+                          [innerHTML]="msg.text | renderText">
+                        </div>
+                      </ng-template>
                     </div>
                   </ng-template>
                 </ng-template>
 
-                <!-- Hover action toolbar -->
-                <div *ngIf="hover()" [class]="'absolute -top-4 z-20 ' + (isMe ? 'left-2' : 'right-2')">
+                <!-- Hover action toolbar — hidden on tombstoned messages
+                     (no body to react/reply/edit/forward against). -->
+                <div *ngIf="hover() && !msg.deleted" [class]="'absolute -top-4 z-20 ' + (isMe ? 'left-2' : 'right-2')">
                   <div class="flex items-center bg-white border border-gray-200 rounded-full shadow-sm">
                     <button (click)="$event.stopPropagation(); togglePicker()"
                       class="w-7 h-7 shrink-0 flex items-center justify-center hover:bg-gray-100 rounded-full text-gray-600"
@@ -153,16 +196,24 @@
                           <app-icon name="copy" [size]="14" class="text-gray-500"></app-icon>
                           Copy text
                         </button>
+                        <button type="button"
+                          (mousedown)="$event.stopPropagation()"
+                          (click)="$event.stopPropagation(); onExpandMessage()"
+                          class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
+                          <app-icon name="maximize-2" [size]="14" class="text-gray-500"></app-icon>
+                          Expand
+                        </button>
                         <button (click)="onTogglePin()"
                           class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
                           <app-icon name="pin" [size]="14" [class]="isPinned ? 'text-amber-600' : 'text-gray-500'">
                           </app-icon>
                           {{ isPinned ? 'Unpin' : 'Pin' }}
                         </button>
-                        <button (click)="onEnterBulkSave()"
+                        <button (click)="onToggleSave()"
                           class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
-                          <app-icon name="bookmark" [size]="14" class="text-gray-500"></app-icon>
-                          Save
+                          <app-icon name="bookmark" [size]="14"
+                            [class]="isSaved ? 'text-amber-600' : 'text-gray-500'"></app-icon>
+                          {{ isSaved ? 'Unsave' : 'Save' }}
                         </button>
                         <button (click)="onEnterBulkForward()"
                           class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
@@ -202,17 +253,21 @@
               </div>
             </ng-template>
 
-            <!-- Attachments -->
-            <app-attachment-renderer *ngIf="msg.attachments?.length" [attachments]="msg.attachments">
+            <!-- Attachments / link previews / reactions / thread chip —
+                 all suppressed on tombstoned messages. The deleted
+                 placeholder is the entire message content. -->
+            <app-attachment-renderer *ngIf="msg.attachments?.length && !msg.deleted" [attachments]="msg.attachments">
             </app-attachment-renderer>
 
             <!-- Inline link previews — one card per URL found in the message
                  body. Rendered after attachments so they don't compete for
                  attention. Capped to 2 to avoid filling the screen. -->
-            <app-link-preview *ngFor="let u of links()" [url]="u"></app-link-preview>
+            <ng-container *ngIf="!msg.deleted">
+              <app-link-preview *ngFor="let u of links()" [url]="u"></app-link-preview>
+            </ng-container>
 
             <!-- Reaction chips -->
-            <div *ngIf="reactionList().length > 0"
+            <div *ngIf="reactionList().length > 0 && !msg.deleted"
               [class]="'flex items-center gap-1 mt-1 ' + (isMe ? 'flex-row-reverse' : '')">
               <button *ngFor="let r of reactionList()" (click)="onReact({ msgId: msg.id, emoji: r.emoji })"
                 [class]="reactionChipClass(r)">
@@ -222,7 +277,7 @@
             </div>
 
             <!-- Thread chip -->
-            <button *ngIf="msg.thread" (click)="openThread.emit(msg.id)"
+            <button *ngIf="msg.thread && !msg.deleted" (click)="openThread.emit(msg.id)"
               class="mt-1 flex items-center gap-2 text-[12px] text-blue-700 hover:underline">
               <app-icon name="chevron-right" [size]="12"></app-icon>
               <span class="font-medium">{{ msg.thread.count }} replies</span>
