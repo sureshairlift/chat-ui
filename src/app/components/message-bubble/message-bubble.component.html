@@ -33,11 +33,10 @@
 
             <!-- New block protocol (preferred when present). -->
             <ng-container *ngIf="hasBlocks; else legacyAi">
-              <div class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-2xl space-y-2">
-                <app-block-renderer *ngFor="let b of blocks; trackBy: trackBlock"
-                                    [block]="b"
-                                    (action)="onBlockAction($event)"
-                                    (submit)="onBlockFormSubmit($event)">
+              <div
+                class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-2xl space-y-2">
+                <app-block-renderer *ngFor="let b of blocks; trackBy: trackBlock" [block]="b"
+                  (action)="onBlockAction($event)" (submit)="onBlockFormSubmit($event)">
                 </app-block-renderer>
               </div>
             </ng-container>
@@ -108,8 +107,7 @@
                      adapter; mock-data messages of type='quote' also
                      populate it). The chip sits above the bubble body
                      as a compact "Replying to X: snippet" pill. -->
-                <div *ngIf="msg.quoted && !msg.deleted"
-                  class="text-[12px] mb-1.5 pb-1.5 border-b border-black/5">
+                <div *ngIf="msg.quoted && !msg.deleted" class="text-[12px] mb-1.5 pb-1.5 border-b border-black/5">
                   <div class="font-medium text-gray-700 flex items-center gap-1">
                     <app-avatar *ngIf="msg.quoted.senderId && quotedSender" [user]="quotedSender" [size]="14">
                     </app-avatar>
@@ -148,7 +146,7 @@
                        the convention WhatsApp / Slack / Google Chat use
                        so the row reads as "tombstone, not message". -->
                   <div *ngIf="msg.deleted; else liveBody"
-                       class="text-[13px] italic text-gray-500 inline-flex items-center gap-1.5">
+                    class="text-[13px] italic text-gray-500 inline-flex items-center gap-1.5">
                     <app-icon name="trash-2" [size]="12" class="text-gray-400"></app-icon>
                     This message was deleted by the sender
                   </div>
@@ -196,8 +194,7 @@
                           <app-icon name="copy" [size]="14" class="text-gray-500"></app-icon>
                           Copy text
                         </button>
-                        <button type="button"
-                          (mousedown)="$event.stopPropagation()"
+                        <button type="button" (mousedown)="$event.stopPropagation()"
                           (click)="$event.stopPropagation(); onExpandMessage()"
                           class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
                           <app-icon name="maximize-2" [size]="14" class="text-gray-500"></app-icon>
@@ -211,8 +208,8 @@
                         </button>
                         <button (click)="onToggleSave()"
                           class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
-                          <app-icon name="bookmark" [size]="14"
-                            [class]="isSaved ? 'text-amber-600' : 'text-gray-500'"></app-icon>
+                          <app-icon name="bookmark" [size]="14" [class]="isSaved ? 'text-amber-600' : 'text-gray-500'">
+                          </app-icon>
                           {{ isSaved ? 'Unsave' : 'Save' }}
                         </button>
                         <button (click)="onEnterBulkForward()"

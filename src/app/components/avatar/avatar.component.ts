@@ -14,26 +14,8 @@ import { Sender, Conversation } from "../../models/types";
   standalone: true,
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <ng-container *ngIf="user; else placeholder">
-      <div
-        [class]="containerClass"
-        [style.width.px]="size"
-        [style.height.px]="size"
-        [style.fontSize.px]="fontSize"
-        [title]="user.name"
-      >
-        {{ user.initials }}
-        <span
-          *ngIf="user.presence === 'active'"
-          class="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-white"
-        ></span>
-      </div>
-    </ng-container>
-    <ng-template #placeholder>
-      <div class="bg-gray-300 rounded-full" [style.width.px]="size" [style.height.px]="size"></div>
-    </ng-template>
-  `,
+  templateUrl: "./avatar.component.html",
+  styleUrl: "./avatar.component.css",
 })
 export class AvatarComponent {
   @Input() user!: Sender | Conversation | null | undefined;

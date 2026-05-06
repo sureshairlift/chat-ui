@@ -9,12 +9,8 @@ import { MODE_INFO } from "../../data/mode-info";
   standalone: true,
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <span [class]="'inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 ' + m.bg + ' ' + m.text">
-      <span [class]="'h-1.5 w-1.5 rounded-full ' + m.dot"></span>
-      {{ m.label }}
-    </span>
-  `,
+  templateUrl: "./mode-badge.component.html",
+  styleUrl: "./mode-badge.component.css",
 })
 export class ModeBadgeComponent {
   @Input() mode: PortalMode = "ai_only";

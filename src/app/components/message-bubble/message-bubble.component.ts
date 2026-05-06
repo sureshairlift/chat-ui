@@ -50,6 +50,7 @@ import type { LiveMessage } from "../../services/adapters";
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./message-bubble.component.html",
+  styleUrl: "./message-bubble.component.css",
 })
 export class MessageBubbleComponent implements OnDestroy {
   state = inject(ChatStateService);

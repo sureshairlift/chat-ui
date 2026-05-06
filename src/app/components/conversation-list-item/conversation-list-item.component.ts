@@ -26,6 +26,7 @@ import { AvatarComponent } from "../avatar/avatar.component";
   imports: [CommonModule, IconComponent, AvatarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./conversation-list-item.component.html",
+  styleUrl: "./conversation-list-item.component.css",
 })
 export class ConversationListItemComponent implements OnChanges, OnDestroy {
   bp = inject(BreakpointService);

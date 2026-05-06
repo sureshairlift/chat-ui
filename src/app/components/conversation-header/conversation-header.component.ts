@@ -46,6 +46,7 @@ type NotifLevel = "all" | "mentions" | "important" | "none";
   imports: [CommonModule, IconComponent, AvatarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./conversation-header.component.html",
+  styleUrl: "./conversation-header.component.css",
 })
 export class ConversationHeaderComponent implements OnDestroy {
   state = inject(ChatStateService);

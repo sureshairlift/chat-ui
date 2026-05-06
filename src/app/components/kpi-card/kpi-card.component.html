@@ -1,0 +1,29 @@
+<button
+  *ngIf="clickable; else divTpl"
+  (click)="clicked.emit()"
+  [class]="containerClass"
+>
+  <ng-container *ngTemplateOutlet="body"></ng-container>
+</button>
+<ng-template #divTpl>
+  <div [class]="containerClass">
+    <ng-container *ngTemplateOutlet="body"></ng-container>
+  </div>
+</ng-template>
+
+<ng-template #body>
+  <div [class]="'relative ' + accentClass">
+    <ng-content></ng-content>
+    <span *ngIf="pulse"
+          class="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
+  </div>
+  <div class="min-w-0 flex-1">
+    <div class="text-[11px] font-semibold uppercase tracking-wider text-gray-500 truncate">
+      {{ label }}
+    </div>
+    <div class="flex items-baseline gap-1.5">
+      <span [class]="'text-[20px] font-semibold leading-none ' + textClass">{{ value }}</span>
+      <span class="text-[11px] text-gray-500 truncate">{{ hint }}</span>
+    </div>
+  </div>
+</ng-template>

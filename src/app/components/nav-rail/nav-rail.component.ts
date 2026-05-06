@@ -11,30 +11,7 @@ import { IconComponent } from "../icon/icon.component";
   standalone: true,
   imports: [CommonModule, IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div class="hidden lg:flex w-[68px] shrink-0 flex-col items-center gap-2 py-3 border-r border-gray-200 bg-white">
-      <button class="relative flex flex-col items-center group">
-        <div class="h-10 w-10 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-600">
-          <app-icon name="mail" [size]="20"></app-icon>
-          <span class="absolute -top-0.5 right-1 bg-red-500 text-white text-[9px] font-semibold rounded-full px-1 min-w-[18px] h-[18px] flex items-center justify-center">
-            99+
-          </span>
-        </div>
-        <span class="text-[11px] mt-0.5 text-gray-700">Mail</span>
-      </button>
-      <button class="relative flex flex-col items-center">
-        <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700">
-          <app-icon name="message-square" [size]="20"></app-icon>
-        </div>
-        <span class="text-[11px] mt-0.5 font-medium text-gray-900">Chat</span>
-      </button>
-      <button class="relative flex flex-col items-center">
-        <div class="h-10 w-10 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-600">
-          <app-icon name="video" [size]="20"></app-icon>
-        </div>
-        <span class="text-[11px] mt-0.5 text-gray-700">Meet</span>
-      </button>
-    </div>
-  `,
+  templateUrl: "./nav-rail.component.html",
+  styleUrl: "./nav-rail.component.css",
 })
 export class NavRailComponent {}

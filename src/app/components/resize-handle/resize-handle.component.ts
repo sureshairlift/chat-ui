@@ -22,24 +22,8 @@ import { CommonModule } from "@angular/common";
   standalone: true,
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div
-      (mousedown)="mouseDown.emit($event)"
-      [class]="containerClass"
-      title="Drag to resize"
-      role="separator"
-      [attr.aria-orientation]="'vertical'"
-    >
-      <!-- Thin edge line — barely visible at rest, gray on hover, accent on drag -->
-      <div [class]="edgeClass"></div>
-
-      <!-- Floating grip capsule — appears centered on hover/drag -->
-      <div [class]="capsuleClass">
-        <div [class]="gripBarClass"></div>
-        <div [class]="gripBarClass"></div>
-      </div>
-    </div>
-  `,
+  templateUrl: "./resize-handle.component.html",
+  styleUrl: "./resize-handle.component.css",
 })
 export class ResizeHandleComponent {
   @Input() side: "right" | "left" = "right";

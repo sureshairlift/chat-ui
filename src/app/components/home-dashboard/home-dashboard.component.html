@@ -135,11 +135,9 @@
                Surfaces backend numbers regardless of which role the
                page is rendered in. Hidden in offline/demo mode where
                the live signals stay null. -->
-          <div *ngIf="state.live()"
-               class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 px-1">
+          <div *ngIf="state.live()" class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 px-1">
             <app-kpi-card label="In queue" [value]="liveAwaitingHandoff().length"
-              [tone]="liveAwaitingHandoff().length > 0 ? 'red' : 'gray'"
-              [pulse]="liveAwaitingHandoff().length > 0"
+              [tone]="liveAwaitingHandoff().length > 0 ? 'red' : 'gray'" [pulse]="liveAwaitingHandoff().length > 0"
               [hint]="liveQueueWaitMinutes().median > 0
                 ? ('Median wait ' + liveQueueWaitMinutes().median + 'm')
                 : 'Nothing waiting'">
@@ -158,8 +156,7 @@
               <app-icon name="inbox" [size]="14"></app-icon>
             </app-kpi-card>
 
-            <app-kpi-card label="Saved" [value]="liveSavedCount()"
-              [tone]="liveSavedCount() > 0 ? 'violet' : 'gray'"
+            <app-kpi-card label="Saved" [value]="liveSavedCount()" [tone]="liveSavedCount() > 0 ? 'violet' : 'gray'"
               [hint]="liveSavedCount() > 0 ? 'Bookmarked messages' : 'No saved messages'">
               <app-icon name="bookmark" [size]="14"></app-icon>
             </app-kpi-card>
@@ -168,27 +165,26 @@
           <!-- Resolved-today badge + channel-mix chips. Sits between the
                live KPI strip and the original 'today' strip so the agent
                sees a quick activity snapshot. -->
-          <div *ngIf="state.live()"
-               class="mt-3 flex items-center gap-2 px-1 text-[12px] text-gray-600 flex-wrap">
+          <div *ngIf="state.live()" class="mt-3 flex items-center gap-2 px-1 text-[12px] text-gray-600 flex-wrap">
             <span *ngIf="liveResolvedToday().length > 0"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
               <app-icon name="check-circle-2" [size]="12"></app-icon>
               {{ liveResolvedToday().length }} resolved today
             </span>
             <span *ngIf="channelMix().direct > 0"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 ring-1 ring-gray-200">
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 ring-1 ring-gray-200">
               {{ channelMix().direct }} direct
             </span>
             <span *ngIf="channelMix().space > 0"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 ring-1 ring-gray-200">
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 ring-1 ring-gray-200">
               {{ channelMix().space }} spaces
             </span>
             <span *ngIf="channelMix().customer + channelMix().external_group > 0"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
               {{ channelMix().customer + channelMix().external_group }} customer
             </span>
             <span *ngIf="channelMix().ai > 0"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-200">
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-200">
               {{ channelMix().ai }} AI
             </span>
           </div>

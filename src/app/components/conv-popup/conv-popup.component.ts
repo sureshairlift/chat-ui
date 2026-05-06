@@ -45,9 +45,7 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./conv-popup.component.html",
-  styles: [`
-    :host { display: block; pointer-events: auto; }
-  `],
+  styleUrl: "./conv-popup.component.css",
 })
 export class ConvPopupComponent implements AfterViewInit, AfterViewChecked, OnChanges, OnDestroy {
   state = inject(ChatStateService);

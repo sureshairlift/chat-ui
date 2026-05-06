@@ -1,0 +1,112 @@
+<div class="rounded-lg border border-gray-200 bg-white">
+  <header class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+    <div class="flex items-center gap-2">
+      <span class="text-sm font-semibold text-gray-900">Handoff queue</span>
+      <span class="text-xs text-gray-500">{{ handoffs().length }}</span>
+    </div>
+    <button class="text-xs text-blue-600 hover:underline disabled:opacity-50"
+            [disabled]="loading()"
+            (click)="refresh()"
+            title="Refresh">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+  </header>
+
+  <div *ngIf="lastError()" class="px-4 py-2 text-xs text-red-700 bg-red-50 border-b border-red-100">
+    {{ lastError() }}
+  </div>
+
+  <div *ngIf="handoffs().length === 0; else queueRows" class="px-4 py-6 text-center text-sm text-gray-500">
+    No pending handoffs.
+  </div>
+
+  <ng-template #queueRows>
+    <ul class="divide-y divide-gray-100">
+      <li *ngFor="let h of handoffs(); trackBy: trackById"
+          class="flex flex-col gap-2 px-4 py-3 hover:bg-gray-50">
+        <div class="flex items-start gap-3">
+          <span [class]="priorityBadgeClass(h)">{{ h.priority }}</span>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm text-gray-900 truncate">
+              <span class="font-medium">{{ humanizeRef(h.opened_by) }}</span>
+              &middot;
+              <span class="text-gray-500">{{ humanizeChannel(h.channel_id) }}</span>
+            </div>
+            <div class="text-xs text-gray-500 mt-0.5">
+              Opened {{ relativeTime(h.opened_on) }} &middot; status: {{ h.status }}
+              <span *ngIf="h.assigned_team"> &middot; team: {{ h.assigned_team }}</span>
+              <span *ngIf="h.claimed_by"> &middot; claimed by {{ humanizeRef(h.claimed_by) }}</span>
+            </div>
+            <div *ngIf="h.ai_summary" class="text-xs text-gray-700 mt-1 line-clamp-2">
+              {{ h.ai_summary }}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 ml-9">
+          <button *ngIf="h.status === 'pending'"
+                  type="button"
+                  class="text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  [disabled]="busy() === h.id"
+                  (click)="claim(h)">
+            Take over
+          </button>
+          <button *ngIf="h.status === 'pending' || h.status === 'claimed'"
+                  type="button"
+                  class="text-xs px-2.5 py-1 rounded bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50"
+                  [disabled]="busy() === h.id"
+                  (click)="openAssign(h)">
+            Assign
+          </button>
+          <button *ngIf="h.status === 'pending' || h.status === 'claimed'"
+                  type="button"
+                  class="text-xs px-2.5 py-1 rounded bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50"
+                  [disabled]="busy() === h.id"
+                  (click)="openDismiss(h)">
+            Dismiss
+          </button>
+          <button *ngIf="h.status === 'claimed'"
+                  type="button"
+                  class="text-xs px-2.5 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  [disabled]="busy() === h.id"
+                  (click)="resolve(h)">
+            Resolve
+          </button>
+        </div>
+      </li>
+    </ul>
+  </ng-template>
+</div>
+
+<!-- Assign modal — minimal inline. A richer team picker lives in
+     the dashboard's standard side modal; this is enough for v1. -->
+<div *ngIf="assigning()" class="fixed inset-0 z-40 flex items-center justify-center bg-black/30">
+  <div class="bg-white rounded-lg shadow-xl w-80 p-4 space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Assign handoff</h3>
+    <p class="text-xs text-gray-600">User ref of the agent (e.g. op:42):</p>
+    <input type="text" [(ngModel)]="assignRef" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder="op:42" />
+    <div class="flex justify-end gap-2 pt-1">
+      <button type="button" class="text-xs px-3 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200" (click)="closeAssign()">Cancel</button>
+      <button type="button"
+              class="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              [disabled]="!assignRef.trim()"
+              (click)="confirmAssign()">Assign</button>
+    </div>
+  </div>
+</div>
+
+<!-- Dismiss modal -->
+<div *ngIf="dismissing()" class="fixed inset-0 z-40 flex items-center justify-center bg-black/30">
+  <div class="bg-white rounded-lg shadow-xl w-96 p-4 space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">Dismiss handoff</h3>
+    <p class="text-xs text-gray-600">Reason (required, captured in the audit log):</p>
+    <textarea [(ngModel)]="dismissReason" rows="3" class="w-full border border-gray-300 rounded px-2 py-1 text-sm" placeholder="Spam / mistake / customer disconnected..."></textarea>
+    <div class="flex justify-end gap-2 pt-1">
+      <button type="button" class="text-xs px-3 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200" (click)="closeDismiss()">Cancel</button>
+      <button type="button"
+              class="text-xs px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+              [disabled]="!dismissReason.trim()"
+              (click)="confirmDismiss()">Dismiss</button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,57 @@
+<ng-container *ngIf="items().length === 0; else listTpl">
+  <div class="flex-1 flex flex-col bg-white h-full w-full min-h-0">
+    <ng-container *ngTemplateOutlet="header"></ng-container>
+    <div class="flex-1 flex flex-col items-center justify-center text-center px-6">
+      <app-icon name="send" [size]="48" class="text-gray-300 mb-3"></app-icon>
+      <h3 class="text-[16px] font-medium text-gray-900 mb-1">No sent messages yet</h3>
+      <p class="text-[13px] text-gray-600 max-w-xs">
+        Messages you send will appear here, newest first — useful for tracking what you've committed to or asked others to do.
+      </p>
+    </div>
+  </div>
+</ng-container>
+
+<ng-template #listTpl>
+  <div class="flex-1 overflow-y-auto scrollable bg-white h-full w-full min-h-0">
+    <ng-container *ngTemplateOutlet="header"></ng-container>
+    <div class="divide-y divide-gray-50">
+      <button
+        *ngFor="let it of items(); trackBy: trackBy"
+        (click)="openConv.emit(it.convId)"
+        class="w-full flex items-start gap-3 px-4 sm:px-6 py-3 hover:bg-gray-50 text-left transition"
+      >
+        <app-avatar [user]="it.conv" [size]="36"></app-avatar>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-baseline justify-between gap-3">
+            <span class="text-[13px] font-medium text-gray-900 truncate">{{ it.convName }}</span>
+            <span class="text-[11px] text-gray-500 shrink-0">{{ it.time }}</span>
+          </div>
+          <div class="text-[13px] text-gray-700 mt-0.5 line-clamp-2 break-words">
+            <span class="text-gray-500">You: </span>
+            <ng-container *ngIf="it.excerpt; else empty">{{ it.excerpt }}</ng-container>
+            <ng-template #empty><span class="italic text-gray-400">(empty)</span></ng-template>
+          </div>
+        </div>
+      </button>
+    </div>
+  </div>
+</ng-template>
+
+<ng-template #header>
+  <div class="px-4 sm:px-6 pt-5 pb-3 border-b border-gray-100 flex items-center gap-2">
+    <button
+      *ngIf="showBack"
+      (click)="back.emit()"
+      class="p-1.5 -ml-1 rounded-full hover:bg-gray-100 shrink-0"
+      title="Back"
+    >
+      <app-icon name="arrow-left" [size]="20" class="text-gray-700"></app-icon>
+    </button>
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-normal text-gray-900">Sent</h1>
+      <p *ngIf="items().length > 0" class="text-[12px] text-gray-500 mt-0.5">
+        Your messages across all conversations · {{ items().length }} total
+      </p>
+    </div>
+  </div>
+</ng-template>

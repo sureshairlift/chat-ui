@@ -1,0 +1,5 @@
+<button type="button" (mousedown)="$event.preventDefault()" (click)="!disabled && clicked.emit($event)"
+  [disabled]="disabled" [title]="title" [class]="btnClass">
+  <ng-content></ng-content>
+  <span *ngIf="label">{{ label }}</span>
+</button>

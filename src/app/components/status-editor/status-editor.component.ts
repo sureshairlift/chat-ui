@@ -30,6 +30,7 @@ interface ClearOption { label: string; mins: number | null; }
   imports: [CommonModule, FormsModule, IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./status-editor.component.html",
+  styleUrl: "./status-editor.component.css",
 })
 export class StatusEditorComponent {
   state = inject(ChatStateService);

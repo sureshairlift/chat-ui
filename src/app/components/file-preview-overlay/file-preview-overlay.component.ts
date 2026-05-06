@@ -33,9 +33,7 @@ import { FileTypeIconComponent } from "../file-type-icon/file-type-icon.componen
   imports: [CommonModule, IconComponent, FileTypeIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./file-preview-overlay.component.html",
-  styles: [`
-    :host { display: contents; }
-  `],
+  styleUrl: "./file-preview-overlay.component.css",
 })
 export class FilePreviewOverlayComponent {
   svc   = inject(FilePreviewService);

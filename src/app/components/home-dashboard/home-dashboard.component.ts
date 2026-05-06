@@ -70,6 +70,7 @@ interface ActivityIconStyle { iconName: string; bg: string; text: string; }
   // dashboard expands to fit its content and never scrolls.
   host: { class: "flex-1 flex min-w-0 min-h-0 h-full" },
   templateUrl: "./home-dashboard.component.html",
+  styleUrl: "./home-dashboard.component.css",
 })
 export class HomeDashboardComponent implements OnInit, OnDestroy {
   state = inject(ChatStateService);

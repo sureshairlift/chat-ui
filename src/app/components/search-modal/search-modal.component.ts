@@ -38,6 +38,7 @@ interface SegmentList { before: string; match: string; after: string; }
   imports: [CommonModule, FormsModule, IconComponent, AvatarComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./search-modal.component.html",
+  styleUrl: "./search-modal.component.css",
 })
 export class SearchModalComponent implements AfterViewInit {
   state = inject(ChatStateService);

@@ -34,6 +34,7 @@ export interface SectionRow {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: "block shrink-0 h-full" },
   templateUrl: "./sidebar.component.html",
+  styleUrl: "./sidebar.component.css",
 })
 export class SidebarComponent {
   state = inject(ChatStateService);

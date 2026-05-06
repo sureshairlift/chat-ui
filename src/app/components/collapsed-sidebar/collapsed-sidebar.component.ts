@@ -31,6 +31,7 @@ interface CollapsedItem {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: "block shrink-0 h-full" },
   templateUrl: "./collapsed-sidebar.component.html",
+  styleUrl: "./collapsed-sidebar.component.css",
 })
 export class CollapsedSidebarComponent {
   state = inject(ChatStateService);

@@ -48,6 +48,7 @@ interface DisplayReply extends ThreadReply {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: "block shrink-0 h-full" },
   templateUrl: "./thread-panel.component.html",
+  styleUrl: "./thread-panel.component.css",
 })
 export class ThreadPanelComponent implements OnChanges {
   state    = inject(ChatStateService);

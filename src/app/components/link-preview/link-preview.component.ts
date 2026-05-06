@@ -25,32 +25,8 @@ interface PreviewMeta {
   standalone: true,
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <a
-      [href]="url"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="block max-w-[360px] mt-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 transition no-underline overflow-hidden group/preview"
-    >
-      <div class="flex items-stretch">
-        <!-- Icon tile -->
-        <div
-          class="w-12 shrink-0 flex items-center justify-center text-white text-[14px] font-semibold"
-          [style.background]="meta().iconBg"
-        >
-          {{ meta().iconLabel }}
-        </div>
-        <!-- Body -->
-        <div class="flex-1 min-w-0 px-3 py-2">
-          <div class="text-[13px] font-medium text-gray-900 line-clamp-1">{{ meta().title }}</div>
-          <div *ngIf="meta().description" class="text-[11px] text-gray-600 line-clamp-2 mt-0.5">
-            {{ meta().description }}
-          </div>
-          <div class="text-[11px] text-gray-500 mt-1 truncate">{{ meta().host }}</div>
-        </div>
-      </div>
-    </a>
-  `,
+  templateUrl: "./link-preview.component.html",
+  styleUrl: "./link-preview.component.css",
 })
 export class LinkPreviewComponent {
   @Input({ required: true }) url!: string;

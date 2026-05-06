@@ -11,19 +11,8 @@ import { CommonModule } from "@angular/common";
   standalone: true,
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <button
-      type="button"
-      (mousedown)="$event.preventDefault()"
-      (click)="!disabled && clicked.emit($event)"
-      [disabled]="disabled"
-      [title]="title"
-      [class]="btnClass"
-    >
-      <ng-content></ng-content>
-      <span *ngIf="label">{{ label }}</span>
-    </button>
-  `,
+  templateUrl: "./toolbar-btn.component.html",
+  styleUrl: "./toolbar-btn.component.css",
 })
 export class ToolbarBtnComponent {
   @Input() label = "";
@@ -48,4 +37,4 @@ export class ToolbarBtnComponent {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<div class="w-px h-5 bg-gray-200 mx-0.5"></div>`,
 })
-export class ToolbarDividerComponent {}
+export class ToolbarDividerComponent { }

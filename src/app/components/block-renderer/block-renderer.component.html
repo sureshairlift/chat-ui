@@ -1,0 +1,176 @@
+<ng-container [ngSwitch]="block.kind">
+  <!-- text / markdown / code / quote / divider — leaf renderers.
+       text blocks render through ngx-markdown too because the AI
+       prompt asks the LLM to "use plain markdown" — the wire kind
+       stays "text" but the content is markdown-flavored. The
+       [data] binding feeds the streaming text in directly so deltas
+       re-render incrementally. -->
+  <markdown *ngSwitchCase="'text'"
+            class="prose prose-sm max-w-none text-sm text-gray-900"
+            [data]="asText(block).text || ''"></markdown>
+
+  <markdown *ngSwitchCase="'markdown'"
+            class="prose prose-sm max-w-none"
+            [data]="asMd(block).markdown || ''"></markdown>
+
+  <pre *ngSwitchCase="'code'" class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs overflow-x-auto"><code [class]="codeLangClass()">{{ asCode(block).code }}</code></pre>
+
+  <blockquote *ngSwitchCase="'quote'" class="border-l-4 border-gray-300 pl-3 italic text-sm text-gray-700">
+    <markdown [data]="asQuote(block).markdown || ''"></markdown>
+    <footer *ngIf="asQuote(block).cite" class="mt-1 text-xs text-gray-500">— {{ asQuote(block).cite }}</footer>
+  </blockquote>
+
+  <hr *ngSwitchCase="'divider'" class="my-2 border-gray-200" />
+
+  <!-- table -->
+  <div *ngSwitchCase="'table'" class="rounded-lg border border-gray-200 overflow-hidden text-sm">
+    <div *ngIf="asTable(block).title" class="px-3 py-2 bg-gray-50 border-b text-gray-700 font-medium">
+      {{ asTable(block).title }}
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full">
+        <thead class="bg-gray-50 text-xs text-gray-600">
+          <tr>
+            <th *ngFor="let c of asTable(block).columns" class="px-3 py-2 text-left font-medium">{{ c.label }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of asTable(block).rows; let i = index"
+              [class.bg-gray-50]="i % 2 === 1"
+              class="border-t border-gray-100">
+            <td *ngFor="let c of asTable(block).columns" class="px-3 py-2 text-gray-800">
+              {{ formatCell(row[c.key], c.type) }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div *ngIf="asTable(block).total_rows && asTable(block).total_rows! > asTable(block).rows.length"
+         class="px-3 py-2 text-xs text-gray-500 border-t bg-gray-50">
+      Showing {{ asTable(block).rows.length }} of {{ asTable(block).total_rows }} rows
+    </div>
+  </div>
+
+  <!-- chart — simple SVG bar/line; richer renderers (chart.js) can replace this later -->
+  <div *ngSwitchCase="'chart'" class="rounded-lg border border-gray-200 p-3">
+    <div *ngIf="asChart(block).title" class="text-sm font-medium text-gray-800 mb-1">{{ asChart(block).title }}</div>
+    <div *ngIf="asChart(block).subtitle" class="text-xs text-gray-500 mb-2">{{ asChart(block).subtitle }}</div>
+    <svg [attr.viewBox]="'0 0 600 200'" class="w-full h-40">
+      <ng-container *ngFor="let bar of chartBars(); let i = index">
+        <rect [attr.x]="bar.x" [attr.y]="bar.y" [attr.width]="bar.w" [attr.height]="bar.h" [attr.fill]="bar.color" />
+      </ng-container>
+    </svg>
+    <div class="flex flex-wrap gap-2 mt-2 text-xs text-gray-600">
+      <span *ngFor="let s of asChart(block).data.series; let i = index" class="flex items-center gap-1">
+        <span class="inline-block w-2 h-2 rounded-sm" [style.background]="seriesColor(i)"></span>
+        {{ s.name }}
+      </span>
+    </div>
+  </div>
+
+  <!-- tool_call — running spinner + status pill -->
+  <div *ngSwitchCase="'tool_call'" class="rounded-md border border-gray-200 bg-white p-2 flex items-center gap-2 text-sm">
+    <span [class]="toolStatusClass()" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs">
+      <span *ngIf="asTool(block).status === 'running'" class="inline-block w-2 h-2 rounded-full bg-current animate-pulse"></span>
+      {{ asTool(block).status }}
+    </span>
+    <span class="text-gray-700 font-medium">{{ asTool(block).tool }}</span>
+    <span *ngIf="asTool(block).result_summary" class="text-gray-500 text-xs ml-auto">{{ asTool(block).result_summary }}</span>
+  </div>
+
+  <!-- citations -->
+  <div *ngSwitchCase="'citations'" class="rounded-md bg-gray-50 p-2 text-xs">
+    <div class="text-gray-500 mb-1 font-medium">Sources</div>
+    <ul class="space-y-1">
+      <li *ngFor="let s of asCitations(block).sources">
+        <a *ngIf="s.url; else titleOnly" [href]="s.url" target="_blank" rel="noopener" class="text-blue-600 hover:underline">{{ s.title }}</a>
+        <ng-template #titleOnly><span>{{ s.title }}</span></ng-template>
+        <span *ngIf="s.snippet" class="text-gray-500"> — {{ s.snippet }}</span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- handoff CTA -->
+  <div *ngSwitchCase="'handoff'" class="rounded-md border border-amber-200 bg-amber-50 p-3">
+    <div class="text-sm font-medium text-amber-900">Hand off to support team?</div>
+    <div class="text-xs text-amber-800 mt-1">{{ asHandoff(block).summary }}</div>
+    <div class="text-xs text-amber-700 mt-1 italic">Reason: {{ asHandoff(block).reason }}</div>
+    <button type="button"
+            class="mt-2 inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
+            (click)="emitAction({ blockId: block.id, actionId: 'handoff_confirm', intent: 'handoff', args: { reason: asHandoff(block).reason } })">
+      Bring in the team
+    </button>
+  </div>
+
+  <!-- image -->
+  <figure *ngSwitchCase="'image'" class="rounded-md overflow-hidden border border-gray-200">
+    <img [src]="asImage(block).url" [alt]="asImage(block).alt ?? ''" class="w-full max-h-96 object-cover" />
+    <figcaption *ngIf="asImage(block).caption" class="px-2 py-1 text-xs text-gray-600 bg-gray-50">{{ asImage(block).caption }}</figcaption>
+  </figure>
+
+  <!-- file -->
+  <a *ngSwitchCase="'file'" [href]="asFile(block).url" target="_blank" rel="noopener"
+     class="flex items-center gap-2 px-3 py-2 rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-sm">
+    <span class="text-gray-700 font-medium">{{ asFile(block).filename }}</span>
+    <span *ngIf="asFile(block).size" class="text-xs text-gray-500 ml-auto">{{ humanSize(asFile(block).size) }}</span>
+  </a>
+
+  <!-- actions -->
+  <div *ngSwitchCase="'actions'" class="flex flex-wrap gap-2">
+    <button *ngFor="let a of asActions(block).actions" type="button"
+            [class]="actionClass(a.kind)"
+            (click)="emitAction({ blockId: block.id, actionId: a.id, intent: a.intent, args: a.args })">
+      {{ a.label }}
+    </button>
+  </div>
+
+  <!-- form -->
+  <form *ngSwitchCase="'form'" class="rounded-md border border-gray-200 bg-white p-3 space-y-2 text-sm"
+        (ngSubmit)="submitForm($event)">
+    <div *ngIf="asForm(block).title" class="font-medium text-gray-800">{{ asForm(block).title }}</div>
+    <div *ngFor="let f of asForm(block).fields">
+      <label class="block text-xs text-gray-600 mb-0.5">
+        {{ f.label }} <span *ngIf="f.required" class="text-red-500">*</span>
+      </label>
+      <ng-container [ngSwitch]="f.type">
+        <input *ngSwitchCase="'text'" type="text" [name]="f.name" [placeholder]="f.placeholder ?? ''" [required]="!!f.required" class="w-full border border-gray-300 rounded px-2 py-1" />
+        <input *ngSwitchCase="'number'" type="number" [name]="f.name" [placeholder]="f.placeholder ?? ''" [required]="!!f.required" class="w-full border border-gray-300 rounded px-2 py-1" />
+        <input *ngSwitchCase="'date'" type="date" [name]="f.name" [required]="!!f.required" class="w-full border border-gray-300 rounded px-2 py-1" />
+        <textarea *ngSwitchCase="'textarea'" [name]="f.name" [placeholder]="f.placeholder ?? ''" [required]="!!f.required" rows="3" class="w-full border border-gray-300 rounded px-2 py-1"></textarea>
+        <select *ngSwitchCase="'select'" [name]="f.name" [required]="!!f.required" class="w-full border border-gray-300 rounded px-2 py-1">
+          <option *ngFor="let o of f.options ?? []" [value]="o.value">{{ o.label }}</option>
+        </select>
+        <input *ngSwitchCase="'checkbox'" type="checkbox" [name]="f.name" />
+      </ng-container>
+    </div>
+    <button type="submit" class="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700">
+      {{ asForm(block).submit_label || 'Submit' }}
+    </button>
+  </form>
+
+  <!-- link preview -->
+  <a *ngSwitchCase="'link_preview'" [href]="asLink(block).url" target="_blank" rel="noopener"
+     class="block rounded-md border border-gray-200 bg-white overflow-hidden hover:bg-gray-50">
+    <div class="flex">
+      <img *ngIf="asLink(block).image_url" [src]="asLink(block).image_url!" alt="" class="w-24 h-24 object-cover" />
+      <div class="p-2 text-sm flex-1">
+        <div class="text-xs text-gray-500">{{ asLink(block).site_name || asLink(block).url }}</div>
+        <div class="font-medium text-gray-800">{{ asLink(block).title || asLink(block).url }}</div>
+        <div *ngIf="asLink(block).description" class="text-xs text-gray-600 mt-0.5">{{ asLink(block).description }}</div>
+      </div>
+    </div>
+  </a>
+
+  <!-- error -->
+  <div *ngSwitchCase="'error'" class="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-800">
+    <strong>{{ asError(block).code }}</strong>: {{ asError(block).message }}
+    <button *ngIf="asError(block).retryable" type="button"
+            class="ml-2 text-xs text-red-700 underline"
+            (click)="emitAction({ blockId: block.id, actionId: 'retry', intent: 'retry' })">
+      Retry
+    </button>
+  </div>
+
+  <!-- fallback -->
+  <div *ngSwitchDefault class="text-xs text-gray-500 italic">[unrenderable block: {{ block.kind }}]</div>
+</ng-container>

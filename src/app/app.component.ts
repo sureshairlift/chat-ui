@@ -82,6 +82,7 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./app.component.html",
+  styleUrl: "./app.component.css",
 })
 export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy {
   state = inject(ChatStateService);
@@ -238,6 +239,7 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     //     prior content → DO NOT yank the viewport to the bottom.
     let lastConvId: string | null = null;
     let lastLen = 0;
+    let awaitingInitialMessages = false;
     effect(() => {
       const convId = this.state.activeConv();
       const msgs = this.state.currentMessages();
@@ -250,6 +252,15 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
         // Conv switch — jump instantly. Smooth here would feel wrong
         // (you're moving to a different conversation, you want to
         // start at the bottom immediately).
+        awaitingInitialMessages = len === 0;
+        requestAnimationFrame(() => this.scrollToBottom("auto"));
+        return;
+      }
+      // First message-list population after a conv switch (API resolved
+      // post-switch). Treat this as part of the initial load — jump
+      // instantly, not smooth.
+      if (grew && awaitingInitialMessages) {
+        awaitingInitialMessages = false;
         requestAnimationFrame(() => this.scrollToBottom("auto"));
         return;
       }

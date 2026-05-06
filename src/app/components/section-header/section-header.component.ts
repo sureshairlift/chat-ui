@@ -8,28 +8,8 @@ import { IconComponent } from "../icon/icon.component";
   standalone: true,
   imports: [CommonModule, IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <button
-      (click)="clicked.emit()"
-      [class]="'group flex w-full items-center gap-3 px-3 py-2 rounded-r-full text-[14px] mt-0.5 transition ' +
-        (active ? 'bg-blue-100 text-blue-900 font-medium' : 'text-gray-800 hover:bg-gray-100')"
-    >
-      <span class="shrink-0 w-6 flex items-center justify-center">
-        <ng-content></ng-content>
-      </span>
-      <span class="flex-1 text-left truncate">{{ label }}</span>
-      <span
-        *ngIf="count !== undefined && count !== null"
-        [class]="'text-[11px] px-1.5 rounded-full ' +
-          (active ? 'bg-blue-200 text-blue-900' : 'bg-gray-200 text-gray-700')"
-      >{{ count }}</span>
-      <app-icon
-        name="chevron-right"
-        [size]="14"
-        [class]="active ? 'text-blue-700' : 'text-gray-400'"
-      ></app-icon>
-    </button>
-  `,
+  templateUrl: "./section-header.component.html",
+  styleUrl: "./section-header.component.css",
 })
 export class SectionHeaderComponent {
   @Input() label = "";

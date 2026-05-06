@@ -11,29 +11,8 @@ import { FileTypeIconComponent } from "../file-type-icon/file-type-icon.componen
   standalone: true,
   imports: [CommonModule, IconComponent, FileTypeIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div (click)="onPreview()"
-         class="flex items-center gap-3 px-3 py-2.5 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 transition max-w-[320px] cursor-pointer group/file">
-      <app-file-type-icon [ext]="ext" [size]="40"></app-file-type-icon>
-      <div class="flex-1 min-w-0">
-        <div class="text-[13px] font-medium text-gray-900 truncate">{{ att.name }}</div>
-        <div class="text-[11px] text-gray-500 flex items-center gap-1.5">
-          <span class="uppercase tracking-wide">{{ ext || "file" }}</span>
-          <ng-container *ngIf="att.size">
-            <span class="text-gray-300">·</span>
-            <span>{{ att.size }}</span>
-          </ng-container>
-        </div>
-      </div>
-      <button
-        (click)="$event.stopPropagation(); onPreview()"
-        class="p-1.5 rounded hover:bg-gray-100 opacity-0 group-hover/file:opacity-100 transition shrink-0"
-        title="Open preview"
-      >
-        <app-icon name="external-link" [size]="14" class="text-gray-600"></app-icon>
-      </button>
-    </div>
-  `,
+  templateUrl: "./attachment.component.html",
+  styleUrl: "./attachment.component.css",
 })
 export class FileAttachmentComponent {
   private preview = inject(FilePreviewService);

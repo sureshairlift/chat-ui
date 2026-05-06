@@ -21,7 +21,7 @@ import { CommonModule } from "@angular/common";
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./icon.component.html",
-  styles: [":host { display: inline-flex; }"],
+  styleUrl: "./icon.component.css",
 })
 export class IconComponent {
   @Input() name!: string;

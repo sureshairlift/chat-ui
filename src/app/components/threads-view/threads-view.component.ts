@@ -4,6 +4,7 @@ import {
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
+import { MentionDetectorService } from "../../services/mention-detector.service";
 import { SENDERS } from "../../data/senders";
 import { Conversation, Message, Sender, ThreadReply } from "../../models/types";
 import { IconComponent } from "../icon/icon.component";
@@ -48,9 +49,11 @@ type ThreadFilter = "all" | "replied" | "mentioned" | "followed";
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: "flex-1 flex min-w-0 min-h-0 h-full" },
   templateUrl: "./threads-view.component.html",
+  styleUrl: "./threads-view.component.css",
 })
 export class ThreadsViewComponent {
   state = inject(ChatStateService);
+  private mentionDetector = inject(MentionDetectorService);
 
   @Input() currentUserId = "me";
   @Input() showBack = false;
@@ -111,52 +114,8 @@ export class ThreadsViewComponent {
 
   unreadTotal = computed(() => this.items().filter((i) => i.isUnread).length);
 
-  private static readonly MENTION_RE =
-    /@([A-Z][A-Za-z]*(?:\s[A-Z][A-Za-z]*)?)/g;
-
-  private buildAliases(): { matchFn: (n: string) => boolean } {
-    const me = SENDERS[this.currentUserId] || ({} as Sender);
-    const set = new Set<string>();
-    if (me.name) {
-      me.name.split(/\s+/).forEach((t) => { if (t) set.add(t.toLowerCase()); });
-      set.add(me.name.toLowerCase());
-    }
-    if (this.currentUserId === "me") {
-      ["suresh", "rajsuresh", "rajsuresh airlift", "suresh r"]
-        .forEach((t) => set.add(t));
-    }
-    const matchFn = (n: string): boolean => {
-      const lc = (n || "").toLowerCase();
-      if (set.has(lc)) return true;
-      for (const t of set) {
-        if (t.length >= 4 && lc.includes(t)) return true;
-      }
-      return false;
-    };
-    return { matchFn };
-  }
-
-  private containsMyMention(text = "", html = "", isMe: (n: string) => boolean): boolean {
-    const ms = new Set<string>();
-    if (text) {
-      const re = new RegExp(ThreadsViewComponent.MENTION_RE.source, "g");
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(text)) !== null) ms.add(m[1]);
-    }
-    if (html) {
-      const chipRe = /class="mention-chip"[^>]*>@([^<]+)</g;
-      let cm: RegExpExecArray | null;
-      while ((cm = chipRe.exec(html)) !== null) ms.add(cm[1].trim());
-      const stripped = html.replace(/<[^>]+>/g, " ");
-      const re = new RegExp(ThreadsViewComponent.MENTION_RE.source, "g");
-      let tm: RegExpExecArray | null;
-      while ((tm = re.exec(stripped)) !== null) ms.add(tm[1]);
-    }
-    return Array.from(ms).some(isMe);
-  }
-
   private computeItems(): ThreadItem[] {
-    const { matchFn } = this.buildAliases();
+    const matchFn = this.mentionDetector.buildSelfMatcher(this.currentUserId);
     const conversations = this.state.conversations();
     const messagesByConv = this.state.messagesByConv();
     const followed = this.state.manuallyFollowedThreads();
@@ -174,9 +133,9 @@ export class ThreadsViewComponent {
 
         const replies: ThreadReply[] = m.thread.replies || [];
         const iReplied = replies.some((r) => r.sender === this.currentUserId);
-        const iMentionInParent = this.containsMyMention(m.text || "", m.html || "", matchFn);
+        const iMentionInParent = this.mentionDetector.containsSelfMention(m.text || "", m.html || "", matchFn);
         const iMentionInReply = replies.some((r) =>
-          this.containsMyMention(r.text || "", "", matchFn)
+          this.mentionDetector.containsSelfMention(r.text || "", "", matchFn)
         );
         const iManually = followed.has(key);
         const iAmFollowing = iReplied || iMentionInParent || iMentionInReply || iManually;

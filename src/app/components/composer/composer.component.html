@@ -47,15 +47,15 @@
              are no attachments. -->
         <div *ngIf="pendingAttachments().length > 0" class="px-4 pt-3 flex flex-wrap gap-2">
           <div *ngFor="let a of pendingAttachments(); let i = index"
-               class="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50 ring-1 ring-gray-200 text-[12px] max-w-xs">
+            class="flex items-center gap-2 px-2 py-1.5 rounded-md bg-gray-50 ring-1 ring-gray-200 text-[12px] max-w-xs">
             <app-icon
               [name]="a.kind === 'image' ? 'image' : a.kind === 'video' ? 'video' : a.kind === 'audio' ? 'mic' : 'file'"
               [size]="14" class="text-gray-500 shrink-0"></app-icon>
             <span class="truncate text-gray-800">{{ a.filename }}</span>
             <span *ngIf="a.size" class="text-gray-400 shrink-0">{{ formatBytes(a.size) }}</span>
             <button type="button" (click)="removePendingAttachment(i)"
-                    class="ml-0.5 w-4 h-4 inline-flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-500 shrink-0"
-                    title="Remove">
+              class="ml-0.5 w-4 h-4 inline-flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-500 shrink-0"
+              title="Remove">
               <app-icon name="x" [size]="10"></app-icon>
             </button>
           </div>
@@ -69,8 +69,7 @@
              multiple lets the user pick more than one at once; accept="*"
              so any type goes through (server kindForMime decides the
              kind label). -->
-        <input #fileInput type="file" multiple class="hidden"
-               (change)="onFilesPicked($event)" />
+        <input #fileInput type="file" multiple class="hidden" (change)="onFilesPicked($event)" />
 
         <!-- Editable area -->
         <div class="relative px-4 pt-3 pb-1">
@@ -216,10 +215,8 @@
             <span>Commands</span>
             <span class="text-gray-400 normal-case font-normal text-[10px]">↑↓ Enter</span>
           </div>
-          <button *ngFor="let c of filteredSlashCommands(); let i = index"
-            (mousedown)="$event.preventDefault()"
-            (click)="insertSlashCommand(c)"
-            [class]="'w-full flex items-start gap-2 px-3 py-1.5 text-left ' +
+          <button *ngFor="let c of filteredSlashCommands(); let i = index" (mousedown)="$event.preventDefault()"
+            (click)="insertSlashCommand(c)" [class]="'w-full flex items-start gap-2 px-3 py-1.5 text-left ' +
               (s.index === i ? 'bg-blue-50' : 'hover:bg-gray-50')">
             <span class="w-6 h-6 shrink-0 rounded-md bg-gray-100 flex items-center justify-center mt-0.5">
               <app-icon [name]="c.icon" [size]="13" class="text-gray-600"></app-icon>

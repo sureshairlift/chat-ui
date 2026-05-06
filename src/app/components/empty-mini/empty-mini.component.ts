@@ -7,14 +7,8 @@ import { CommonModule } from "@angular/common";
   standalone: true,
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div class="p-6 text-center text-[13px] text-gray-500">
-      <div class="mx-auto mb-2 flex justify-center">
-        <ng-content></ng-content>
-      </div>
-      {{ text }}
-    </div>
-  `,
+  templateUrl: "./empty-mini.component.html",
+  styleUrl: "./empty-mini.component.css",
 })
 export class EmptyMiniComponent {
   @Input() text = "";

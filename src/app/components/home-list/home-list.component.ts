@@ -31,6 +31,7 @@ import { ResizeHandleComponent } from "../resize-handle/resize-handle.component"
   imports: [CommonModule, IconComponent, ConversationListItemComponent, ResizeHandleComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./home-list.component.html",
+  styleUrl: "./home-list.component.css",
 })
 export class HomeListComponent implements AfterViewInit, OnDestroy {
   state = inject(ChatStateService);

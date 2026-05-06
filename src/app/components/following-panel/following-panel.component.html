@@ -1,0 +1,60 @@
+<app-side-panel-shell #shell [fullscreen]="fullscreen" [relativeWhenDocked]="true" (closed)="closed.emit()">
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+    <div class="flex items-center gap-2 min-w-0">
+      <h3 class="text-[16px] font-medium text-gray-900">Following</h3>
+      <span class="text-[12px] text-gray-500">· {{ rows().length }}</span>
+    </div>
+    <button (click)="shell.handleClose()" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-600 shrink-0" title="Close">
+      <app-icon name="x" [size]="16"></app-icon>
+    </button>
+  </div>
+
+  <div class="flex-1 overflow-y-auto scrollable">
+    <div *ngIf="rows().length === 0; else list"
+         class="flex flex-col items-center justify-center text-center py-16 px-6 text-gray-500">
+      <app-icon name="bell" [size]="32" class="mb-2 text-gray-300"></app-icon>
+      <div class="text-[13px] font-medium text-gray-700">No followed threads</div>
+      <div class="text-[12px] text-gray-500 mt-1 max-w-[260px]">
+        Reply to a message and you'll start following its thread automatically.
+      </div>
+    </div>
+
+    <ng-template #list>
+      <button
+        *ngFor="let m of rows()"
+        (click)="openThread.emit({ msgId: m.id, convId: m.convId })"
+        class="block w-full text-left px-5 py-4 border-b border-gray-100 hover:bg-gray-50 transition"
+      >
+        <div class="flex items-start gap-3">
+          <app-avatar [user]="senderFor(m.sender)" [size]="36"></app-avatar>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-baseline justify-between gap-2">
+              <span class="text-[14px] font-semibold truncate">{{ senderFor(m.sender)?.name }}</span>
+              <span class="text-[11px] text-blue-700 bg-blue-50 rounded-full px-2 py-0.5 flex items-center gap-1 shrink-0">
+                <app-icon name="bell" [size]="10"></app-icon>
+                Following
+              </span>
+            </div>
+            <div *ngIf="convFor(m.convId) as conv"
+                 class="text-[11px] text-gray-500 mb-0.5 truncate">
+              in {{ conv.name }}
+            </div>
+            <div class="text-[12px] text-gray-500 mb-1">{{ m.time }}</div>
+            <div class="text-[14px] text-gray-900 line-clamp-3 break-words"
+                 [innerHTML]="(m.text || '') | renderText"></div>
+            <div class="text-[12px] text-blue-700 mt-2 flex items-center gap-1">
+              <app-icon name="message-circle-more" [size]="12"></app-icon>
+              {{ m.thread!.count }} {{ m.thread!.count === 1 ? 'reply' : 'replies' }} · {{ m.thread!.lastTime }}
+            </div>
+          </div>
+        </div>
+      </button>
+    </ng-template>
+  </div>
+
+  <!-- Floating filter pills -->
+  <div class="absolute bottom-3 right-3 flex items-center gap-2 bg-white rounded-full shadow-lg border border-gray-200 p-1">
+    <button class="text-[13px] text-blue-700 hover:bg-blue-50 rounded-full px-3 py-1 font-medium">Mentions me</button>
+    <button class="text-[13px] text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-full px-3 py-1 font-medium">Following</button>
+  </div>
+</app-side-panel-shell>

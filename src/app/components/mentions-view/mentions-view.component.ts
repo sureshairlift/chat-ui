@@ -4,8 +4,9 @@ import {
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
+import { MentionDetectorService } from "../../services/mention-detector.service";
 import { SENDERS } from "../../data/senders";
-import { Conversation, Message, Sender } from "../../models/types";
+import { Conversation, Sender } from "../../models/types";
 import { IconComponent } from "../icon/icon.component";
 import { AvatarComponent } from "../avatar/avatar.component";
 
@@ -33,9 +34,11 @@ interface MentionItem {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: "flex-1 flex min-w-0 min-h-0 h-full" },
   templateUrl: "./mentions-view.component.html",
+  styleUrl: "./mentions-view.component.css",
 })
 export class MentionsViewComponent {
   state = inject(ChatStateService);
+  private mentionDetector = inject(MentionDetectorService);
 
   @Input() currentUserId = "me";
   @Input() showBack = false;
@@ -46,30 +49,8 @@ export class MentionsViewComponent {
 
   trackByMention = (_: number, it: MentionItem) => `${it.convId}-${it.msgId}`;
 
-  /** Mention regex matching the React file's exact pattern. */
-  private static readonly MENTION_RE =
-    /@([A-Z][A-Za-z]*(?:\s[A-Z][A-Za-z]*)?)/g;
-
   private computeItems(): MentionItem[] {
-    const me = SENDERS[this.currentUserId] || ({} as Sender);
-    // Build alias set
-    const myTokens = new Set<string>();
-    if (me.name) {
-      me.name.split(/\s+/).forEach((t) => { if (t) myTokens.add(t.toLowerCase()); });
-      myTokens.add(me.name.toLowerCase());
-    }
-    if (this.currentUserId === "me") {
-      ["suresh", "rajsuresh", "rajsuresh airlift", "suresh r"]
-        .forEach((t) => myTokens.add(t));
-    }
-    const isMeMention = (n: string): boolean => {
-      const lc = (n || "").toLowerCase();
-      if (myTokens.has(lc)) return true;
-      for (const t of myTokens) {
-        if (t.length >= 4 && lc.includes(t)) return true;
-      }
-      return false;
-    };
+    const isMeMention = this.mentionDetector.buildSelfMatcher(this.currentUserId);
 
     const results: MentionItem[] = [];
     const conversations = this.state.conversations();
@@ -80,23 +61,7 @@ export class MentionsViewComponent {
       if (!conv) continue;
       for (const m of msgs) {
         if (!m.text && !m.html) continue;
-        const mentions = new Set<string>();
-        // Plain text
-        if (m.text) {
-          const re = new RegExp(MentionsViewComponent.MENTION_RE.source, "g");
-          let match: RegExpExecArray | null;
-          while ((match = re.exec(m.text)) !== null) mentions.add(match[1]);
-        }
-        // HTML — chips and inline @Names
-        if (m.html) {
-          const chipRe = /class="mention-chip"[^>]*>@([^<]+)</g;
-          let cm: RegExpExecArray | null;
-          while ((cm = chipRe.exec(m.html)) !== null) mentions.add(cm[1].trim());
-          const stripped = m.html.replace(/<[^>]+>/g, " ");
-          const re = new RegExp(MentionsViewComponent.MENTION_RE.source, "g");
-          let tm: RegExpExecArray | null;
-          while ((tm = re.exec(stripped)) !== null) mentions.add(tm[1]);
-        }
+        const mentions = this.mentionDetector.extractMentions(m.text || "", m.html || "");
         if (mentions.size === 0) continue;
         // Keep only if at least one mention is of "me"
         const meMentions = Array.from(mentions).filter(isMeMention);

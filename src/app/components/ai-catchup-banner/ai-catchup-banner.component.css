@@ -1,0 +1,16 @@
+/* Shimmer skeleton for the catch-up loading state. Animates a
+ * highlight band across a soft purple background to suggest "AI
+ * is working" without spinning text. Reduced motion is respected. */
+.catchup-skeleton {
+  display: inline-block;
+  background: linear-gradient(90deg, rgba(168,85,247,0.10) 0%, rgba(168,85,247,0.22) 50%, rgba(168,85,247,0.10) 100%);
+  background-size: 200% 100%;
+  animation: catchupShimmer 1.4s ease-in-out infinite;
+}
+@keyframes catchupShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .catchup-skeleton { animation: none; }
+}

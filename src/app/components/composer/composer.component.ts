@@ -132,6 +132,7 @@ const EMOJIS = [
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./composer.component.html",
+  styleUrl: "./composer.component.css",
 })
 export class ComposerComponent implements OnChanges, OnDestroy {
   state = inject(ChatStateService);

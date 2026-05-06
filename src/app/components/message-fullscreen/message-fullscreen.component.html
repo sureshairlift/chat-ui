@@ -1,0 +1,39 @@
+<div *ngIf="msg() as m"
+     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 sm:p-8"
+     (click)="close()">
+  <div class="bg-white rounded-2xl shadow-2xl ring-1 ring-gray-200 w-full max-w-3xl max-h-[90vh] flex flex-col"
+       (click)="$event.stopPropagation()">
+    <!-- Header -->
+    <div class="flex items-start gap-3 px-5 py-4 border-b border-gray-100 shrink-0">
+      <app-avatar [user]="senderObj()" [size]="36"></app-avatar>
+      <div class="flex-1 min-w-0">
+        <div class="text-[14px] font-medium text-gray-900 truncate">
+          {{ senderObj()?.name || 'Unknown' }}
+        </div>
+        <div class="text-[12px] text-gray-500 truncate">{{ m.time }}</div>
+      </div>
+      <button (click)="close()"
+              class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 shrink-0"
+              title="Close (Esc)">
+        <app-icon name="x" [size]="16"></app-icon>
+      </button>
+    </div>
+
+    <!-- Body — full content, scrollable both directions for wide content -->
+    <div class="flex-1 overflow-auto px-5 py-4 message-body-scroll">
+      <div *ngIf="m.html; else textOnly"
+           class="text-[15px] leading-relaxed text-gray-900 message-html prose prose-sm max-w-none"
+           [innerHTML]="m.html | safeHtml"></div>
+      <ng-template #textOnly>
+        <div class="text-[15px] leading-relaxed text-gray-900 whitespace-pre-wrap break-words"
+             [innerHTML]="m.text | renderText"></div>
+      </ng-template>
+    </div>
+
+    <!-- Footer hint -->
+    <div class="px-5 py-2 border-t border-gray-100 text-[11px] text-gray-500 flex items-center justify-between shrink-0">
+      <span>Press Esc or click outside to close</span>
+      <span class="text-gray-400">Expanded view</span>
+    </div>
+  </div>
+</div>

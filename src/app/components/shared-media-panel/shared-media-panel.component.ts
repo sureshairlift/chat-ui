@@ -1,6 +1,6 @@
 import {
   ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output,
-  SimpleChanges, computed, effect, inject, signal,
+  SimpleChanges, computed, inject, signal,
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
@@ -8,10 +8,11 @@ import { LiveDataService } from "../../services/live-data.service";
 import { ToastService } from "../../services/toast.service";
 import { FilePreviewService } from "../../services/file-preview.service";
 import { SENDERS } from "../../data/senders";
-import { Attachment, Conversation, Message, Sender } from "../../models/types";
+import { Attachment, Conversation } from "../../models/types";
 
 import { IconComponent } from "../icon/icon.component";
 import { FileTypeIconComponent } from "../file-type-icon/file-type-icon.component";
+import { SidePanelShellComponent } from "../side-panel-shell/side-panel-shell.component";
 
 interface SharedItem extends Attachment {
   msgId: string;
@@ -32,10 +33,10 @@ type TabKey = "all" | "images" | "media" | "files";
 @Component({
   selector: "app-shared-media-panel",
   standalone: true,
-  imports: [CommonModule, IconComponent, FileTypeIconComponent],
+  imports: [CommonModule, IconComponent, FileTypeIconComponent, SidePanelShellComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: "block shrink-0 h-full" },
   templateUrl: "./shared-media-panel.component.html",
+  styleUrl: "./shared-media-panel.component.css",
 })
 export class SharedMediaPanelComponent implements OnChanges {
   state   = inject(ChatStateService);
@@ -47,7 +48,6 @@ export class SharedMediaPanelComponent implements OnChanges {
   @Input() fullscreen = false;
   @Output() closed = new EventEmitter<void>();
 
-  closing = signal(false);
   tab = signal<TabKey>("all");
 
   /** Server-loaded shared items (live mode). When null, the computed
@@ -160,23 +160,11 @@ export class SharedMediaPanelComponent implements OnChanges {
     return (att.ext || att.name?.split(".").pop() || "").toLowerCase();
   }
 
-  get asideClass(): string {
-    const fs = this.fullscreen ? "fixed inset-0 z-50" : "shrink-0 h-full";
-    const anim = this.closing() ? "side-panel-out" : "side-panel-in";
-    return `${fs} flex flex-col border-l border-gray-200 bg-white overflow-hidden ${anim}`;
-  }
-
   onPreview(att: SharedItem): void {
     // Open the FilePreviewOverlay with siblings from the same tab so the
     // overlay's prev/next chevrons walk every shared item the user is
     // currently looking at, not just one.
     this.preview.open(att, this.filtered());
-  }
-
-  handleClose(): void {
-    if (this.closing()) return;
-    this.closing.set(true);
-    setTimeout(() => this.closed.emit(), 180);
   }
 }
 
