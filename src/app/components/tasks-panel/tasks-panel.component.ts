@@ -37,7 +37,9 @@ export class TasksPanelComponent {
 
   @Input() conv: Conversation | null = null;
   @Input() fullscreen = false;
+  @Input() width = 380;
   @Output() closed = new EventEmitter<void>();
+  @Output() startResize = new EventEmitter<MouseEvent>();
 
   tasks = computed<ConvTask[]>(() => {
     const id = this.conv?.id;

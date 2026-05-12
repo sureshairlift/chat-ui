@@ -24,6 +24,8 @@ import type {
   Channel,
   ChannelInfo,
   HandoffStatus,
+  MessageInfoResponse,
+  SectionCountsResponse,
   TransitionResult,
   Visibility,
 } from '../models/api-types';
@@ -256,6 +258,44 @@ export class LiveDataService {
     }
   }
 
+  /** Bulk-mark every message in the channel as read. The server resolves
+   *  the latest message id and advances the read pointer to it; no need
+   *  to round-trip first. Returns true on success. */
+  async markAllRead(channelID: string): Promise<boolean> {
+    try {
+      await firstValueFrom(this.api.markChannelRead(channelID));
+      return true;
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return false;
+    }
+  }
+
+  /** Owner/admin metadata edit on a channel. Returns the updated channel
+   *  doc so callers can replace the local cache without a re-fetch. */
+  async updateChannel(
+    channelID: string,
+    patch: { name?: string; description?: string; icon?: string; is_private?: boolean },
+  ): Promise<Channel | null> {
+    try {
+      return await firstValueFrom(this.api.updateChannel(channelID, patch));
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return null;
+    }
+  }
+
+  /** Owner-only delete. Hard-removes the channel doc on the backend. */
+  async deleteChannel(channelID: string): Promise<boolean> {
+    try {
+      await firstValueFrom(this.api.deleteChannel(channelID));
+      return true;
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return false;
+    }
+  }
+
   /** Edit a message. Returns the updated body. */
   async editMessage(messageID: string, content: string): Promise<LiveMessage | null> {
     try {
@@ -337,6 +377,53 @@ export class LiveDataService {
     } catch (err) {
       // viewed-tracking is best-effort; don't surface to UI.
       this.lastError.set(stringifyErr(err));
+    }
+  }
+
+  /** Persist the caller's per-channel section override. Returns true
+   *  on success; the caller does the optimistic flip + rollback. */
+  async setChannelSection(channelID: string, sectionID: string | null): Promise<boolean> {
+    try {
+      await firstValueFrom(this.api.setChannelSection(channelID, sectionID));
+      return true;
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return false;
+    }
+  }
+
+  /** Demote every conv in the named section back to its type-default.
+   *  Returns the count of demoted rows (so the UI can echo it back). */
+  async deleteSection(sectionID: string): Promise<number> {
+    try {
+      const res = await firstValueFrom(this.api.deleteSection(sectionID));
+      return res?.demoted_count ?? 0;
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return 0;
+    }
+  }
+
+  /** Sidebar section badge counts. Returns null on failure so the
+   *  caller can fall back to the locally-computed count. */
+  async loadSectionCounts(): Promise<SectionCountsResponse | null> {
+    try {
+      return await firstValueFrom(this.api.getSectionCounts());
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return null;
+    }
+  }
+
+  /** Message-info payload — drives the Message Info side panel.
+   *  Returns null on permission/not-found so the caller can render
+   *  an empty state without a try/catch. */
+  async loadMessageInfo(messageID: string): Promise<MessageInfoResponse | null> {
+    try {
+      return await firstValueFrom(this.api.getMessageInfo(messageID));
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return null;
     }
   }
 
@@ -582,6 +669,145 @@ export class LiveDataService {
     }
   }
 
+  /** AI reply-hints — 3 short suggestion replies for the composer
+   *  chips. Returns null on failure (network down, AI bridge not
+   *  configured, etc.); caller falls back to the local heuristic. */
+  async loadAIReplyHints(channelID: string, provider?: string): Promise<string[] | null> {
+    try {
+      const res = await firstValueFrom(this.api.getAIReplyHints(channelID, provider));
+      return res?.suggestions ?? null;
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return null;
+    }
+  }
+
+  /** AI "Thinking…" phrases — 5 short status lines the UI cycles
+   *  next to the spinner while the AI is composing a real reply.
+   *  Local-LLM-only on the Python side, so cheap to call. Returns
+   *  null on failure (caller falls back to a static rotation). */
+  async loadAIThinkingWords(channelID: string, question?: string): Promise<string[] | null> {
+    try {
+      const res = await firstValueFrom(this.api.getAIThinkingWords(channelID, question));
+      return res?.words ?? null;
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return null;
+    }
+  }
+
+  /** Stream a generated AI conversation title via Server-Sent Events.
+   *  Calls chat-service's `/channels/:id/ai-auto-title-stream` which
+   *  proxies the Python local-LLM SSE. Invokes `onDelta(text)` for
+   *  each chunk, `onEnd(title)` once the final title arrives, and
+   *  `onError(msg)` on any failure. Returns an abort function the
+   *  caller can use to cancel the stream early (e.g. nav away from
+   *  the conv).
+   *
+   *  Uses raw `fetch` rather than HttpClient because Angular's
+   *  HttpClient doesn't expose the streaming body. */
+  streamAutoTitle(
+    channelID: string,
+    handlers: {
+      onDelta?: (text: string) => void;
+      onEnd?: (title: string) => void;
+      onError?: (msg: string) => void;
+    },
+  ): () => void {
+    const ctrl = new AbortController();
+    const url = `/api/v2/chat-service/channels/${channelID}/ai-auto-title-stream`;
+    // chat-service auth is JWT — must be passed via the
+    // Authorization header (plus x-token for the legacy middleware
+    // path). HttpClient adds these automatically; raw fetch has to
+    // do it explicitly. Without this the SSE request 401s and the
+    // error is invisible to the user.
+    const token = this.identity.token();
+    const headers: Record<string, string> = { Accept: "text/event-stream" };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+      headers["x-token"] = token;
+    }
+    (async () => {
+      try {
+        const resp = await fetch(url, {
+          method: "GET",
+          headers,
+          signal: ctrl.signal,
+          credentials: "same-origin",
+        });
+        if (!resp.ok || !resp.body) {
+          handlers.onError?.(`HTTP ${resp.status}`);
+          return;
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          // SSE events are blank-line-separated. Pull complete
+          // events out of the buffer and leave the partial tail.
+          let idx: number;
+          while ((idx = buf.indexOf("\n\n")) !== -1) {
+            const raw = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            this.handleAutoTitleSSEEvent(raw, handlers);
+          }
+        }
+        // Flush any trailing partial event.
+        if (buf.trim()) this.handleAutoTitleSSEEvent(buf, handlers);
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return;
+        handlers.onError?.(stringifyErr(err));
+      }
+    })();
+    return () => ctrl.abort();
+  }
+
+  private handleAutoTitleSSEEvent(
+    raw: string,
+    handlers: {
+      onDelta?: (text: string) => void;
+      onEnd?: (title: string) => void;
+      onError?: (msg: string) => void;
+    },
+  ): void {
+    let event = "message";
+    let data = "";
+    for (const line of raw.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) data += line.slice(5).trim();
+    }
+    if (!data) return;
+    try {
+      const parsed = JSON.parse(data) as { text?: string; title?: string; message?: string };
+      if (event === "title.delta" && typeof parsed.text === "string") handlers.onDelta?.(parsed.text);
+      else if (event === "title.end" && typeof parsed.title === "string") handlers.onEnd?.(parsed.title);
+      else if (event === "title.error") handlers.onError?.(parsed.message || "stream error");
+    } catch {
+      // Ignore malformed payloads.
+    }
+  }
+
+  /** Spin up a fresh 1:1 AI chat channel for the caller. Returns the
+   *  adapted LiveConversation on success; null on failure (network,
+   *  permission, etc.). Caller is responsible for prepending it to
+   *  the local conversations list and setting it as the active conv. */
+  async createAIChat(): Promise<LiveConversation | null> {
+    try {
+      const me = this.identity.userRef();
+      const channel = await firstValueFrom(this.api.createChannel({
+        type: 'ai_direct',
+        name: 'Airlift Intelligence',
+      }));
+      return adaptChannel(channel, me || '');
+    } catch (err) {
+      this.lastError.set(stringifyErr(err));
+      return null;
+    }
+  }
+
   /** Move read pointer back so the named message + everything after
    *  becomes unread again. Returns true on success. */
   async markChannelUnread(channelID: string, messageID: string): Promise<boolean> {
@@ -639,7 +865,7 @@ export class LiveDataService {
   }
 
   /** Persist sidebar prefs cross-device. */
-  async setPreferences(body: { section_order?: string[]; custom_sections?: { id: string; label: string; color?: string }[] }) {
+  async setPreferences(body: { section_order?: string[]; custom_sections?: { id: string; label: string; color?: string; emoji?: string }[] }) {
     try {
       return await firstValueFrom(this.api.setPreferences(body));
     } catch (err) {

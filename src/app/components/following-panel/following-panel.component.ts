@@ -35,7 +35,9 @@ export class FollowingPanelComponent {
   state = inject(ChatStateService);
 
   @Input() fullscreen = false;
+  @Input() width = 380;
   @Output() closed = new EventEmitter<void>();
+  @Output() startResize = new EventEmitter<MouseEvent>();
   @Output() openThread = new EventEmitter<{ msgId: string; convId: string }>();
 
   rows = computed<FollowedRow[]>(() => {

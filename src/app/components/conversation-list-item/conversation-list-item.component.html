@@ -1,6 +1,9 @@
-    <div [class]="rootClass">
+    <div [class]="rootClass + (isDragging() ? ' opacity-40' : '')"
+         draggable="true"
+         (dragstart)="onDragStart($event)"
+         (dragend)="onDragEnd($event)">
       <div (click)="picked.emit(c.id)"
-        class="flex items-start gap-3 px-5 py-2.5 cursor-pointer hover:bg-gray-50 relative">
+        class="flex items-start gap-3 px-5 py-2.5 cursor-pointer hover:bg-gray-50 relative rounded-lg">
         <div class="relative shrink-0">
           <app-avatar [user]="c" [size]="36"></app-avatar>
           <!-- Unread indicator: numeric badge when we have a count from
@@ -63,13 +66,18 @@
               </button>
               <div *ngIf="menuOpen()" (click)="$event.stopPropagation()"
                 class="absolute right-0 top-8 z-30 w-56 bg-white rounded-lg shadow-lg ring-1 ring-gray-200 py-1 text-[13px]">
-                <button class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
-                  <app-icon name="bell" [size]="14"></app-icon> Mute
+                <button (click)="onToggleMute()"
+                        class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
+                  <app-icon name="bell" [size]="14"></app-icon>
+                  {{ c.muted ? 'Unmute' : 'Mute' }}
                 </button>
-                <button class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
-                  <app-icon name="pin" [size]="14"></app-icon> Pin chat
+                <button (click)="onTogglePin()"
+                        class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
+                  <app-icon name="pin" [size]="14"></app-icon>
+                  {{ c.pinned ? 'Unpin chat' : 'Pin chat' }}
                 </button>
-                <button class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
+                <button (click)="onMarkRead()"
+                        class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2">
                   <app-icon name="check-circle-2" [size]="14"></app-icon> Mark as read
                 </button>
                 <!-- Open in popup — not offered for AI sessions; popping
@@ -80,29 +88,66 @@
                   <app-icon name="external-link" [size]="14"></app-icon> Open in popup
                 </button>
 
-                <ng-container *ngIf="customSections && customSections.length > 0">
-                  <div class="h-px bg-gray-100 my-1"></div>
-                  <div class="px-3 py-1 text-[11px] font-medium text-gray-500 uppercase tracking-wider">
-                    Move to section
-                  </div>
-                  <button *ngFor="let s of customSections" (click)="moveToSection(s.id)" [class]="'w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 ' +
-                            (c.section === s.id ? 'text-blue-700 bg-blue-50/50' : '')">
-                    <span [class]="'w-4 h-4 rounded flex items-center justify-center ' + s.color">
-                      <app-icon name="hash" [size]="10" class="text-white"></app-icon>
-                    </span>
+                <!-- Move-to-section group. Always shown so the user
+                     can target both built-in sections (Direct messages
+                     / Spaces / AI / Customers) and custom ones — same
+                     menu, single discovery path. Falls back to a
+                     "Create a section" CTA when no customs exist yet. -->
+                <div class="h-px bg-gray-100 my-1"></div>
+                <div class="px-3 py-1 text-[11px] font-medium text-gray-500 uppercase tracking-wider">
+                  Move to section
+                </div>
+                <!-- Built-in destinations — filtered to the channel's
+                     own type bucket so cross-type moves aren't offered.
+                     A DM only sees "Direct messages", a space only
+                     sees "Spaces", an AI conv only sees "Airlift
+                     Intelligence", etc. Custom sections show below. -->
+                <button *ngFor="let b of allowedBuiltinTargets" (click)="moveToSection(b.id)"
+                        [class]="'w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 ' +
+                                 (c.section === b.id ? 'text-blue-700 bg-blue-50/50' : '')">
+                  <span class="w-4 h-4 rounded flex items-center justify-center bg-gray-100 text-gray-600">
+                    <app-icon [name]="b.icon" [size]="10"></app-icon>
+                  </span>
+                  {{ b.label }}
+                  <app-icon *ngIf="c.section === b.id" name="check-circle-2" [size]="12"
+                    class="ml-auto text-blue-600"></app-icon>
+                </button>
+                <ng-container *ngIf="customSections?.length">
+                  <div class="h-px bg-gray-50 my-1 mx-3"></div>
+                  <button *ngFor="let s of customSections" (click)="moveToSection(s.id)"
+                          [class]="'group/csm w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 ' +
+                                   (c.section === s.id ? 'text-blue-700 bg-blue-50/50' : '')">
+                    <!-- Emoji (Noto, animated on hover) takes priority
+                         over the colored # chip; chip is the fallback
+                         for sections that pre-date the picker. -->
+                    <ng-container *ngIf="s.emoji as e; else mvHash">
+                      <img [src]="e | notoEmoji:'png':72" [alt]="e"
+                           class="w-4 h-4 object-contain group-hover/csm:hidden" />
+                      <img [src]="e | notoEmoji:'webp':72" [alt]="e"
+                           (error)="notoWebpFallback($event)"
+                           class="w-4 h-4 object-contain hidden group-hover/csm:block" />
+                    </ng-container>
+                    <ng-template #mvHash>
+                      <span [class]="'w-4 h-4 rounded flex items-center justify-center ' + s.color">
+                        <app-icon name="hash" [size]="10" class="text-white"></app-icon>
+                      </span>
+                    </ng-template>
                     {{ s.label }}
                     <app-icon *ngIf="c.section === s.id" name="check-circle-2" [size]="12"
                       class="ml-auto text-blue-600"></app-icon>
                   </button>
-                  <button *ngIf="isInCustomSection()" (click)="moveToSection(null)"
-                    class="w-full text-left px-3 py-1.5 hover:bg-gray-50 flex items-center gap-2 text-gray-600">
-                    <app-icon name="arrow-left" [size]="14"></app-icon>
-                    Remove from section
-                  </button>
                 </ng-container>
+                <!-- Hint when there are no custom sections yet —
+                     points the user at the sidebar's + New section
+                     button without needing programmatic deep-link. -->
+                <div *ngIf="!customSections?.length"
+                     class="px-3 py-1.5 text-[11px] text-gray-500 italic">
+                  Tip: add a custom section in the sidebar to organize chats.
+                </div>
 
                 <div class="h-px bg-gray-100 my-1"></div>
-                <button class="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-red-600 flex items-center gap-2">
+                <button (click)="onHide()"
+                        class="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-red-600 flex items-center gap-2">
                   <app-icon name="x" [size]="14"></app-icon> Hide conversation
                 </button>
               </div>

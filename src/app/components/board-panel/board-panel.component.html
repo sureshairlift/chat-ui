@@ -1,62 +1,146 @@
-<app-side-panel-shell #shell [fullscreen]="fullscreen" (closed)="closed.emit()">
-  <!-- Header strip -->
-  <div class="flex items-center justify-end gap-1 px-3 py-2 border-b border-gray-100">
-    <button class="px-3 py-1.5 rounded-full bg-orange-100 text-orange-900 text-[13px] font-medium flex items-center gap-1.5">
-      <app-icon name="pin" [size]="14"></app-icon>
-      Board
-    </button>
-    <button class="p-1.5 hover:bg-gray-100 rounded-full text-gray-600">
-      <app-icon name="maximize-2" [size]="16"></app-icon>
-    </button>
-    <button (click)="shell.handleClose()" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-600">
+<app-side-panel-shell #shell [fullscreen]="fullscreen" [width]="width"
+                      (closed)="closed.emit()" (startResize)="startResize.emit($event)">
+  <!-- Header: title + count + close -->
+  <div class="flex items-center px-4 py-3 border-b border-gray-100">
+    <app-icon name="pin" [size]="16" class="text-orange-500 mr-2"></app-icon>
+    <h2 class="text-[14px] font-semibold text-gray-900 flex-1">Board</h2>
+    <button (click)="shell.handleClose()" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-600" title="Close">
       <app-icon name="x" [size]="16"></app-icon>
     </button>
   </div>
 
-  <div class="flex-1 overflow-y-auto px-5 py-4 scrollable">
-    <h3 class="text-[18px] font-medium text-gray-900 mb-3">Pinned Messages</h3>
-    <div class="bg-gray-50 rounded-lg p-3 mb-5">
-      <div class="flex items-start gap-2">
-        <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-[12px]">👨‍💻</div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-baseline gap-2 text-[12px]">
-            <span class="font-semibold text-gray-900">me</span>
-            <span class="text-gray-500">Jun 6, 10:29 AM</span>
-          </div>
-          <div class="text-[13px] mt-1 break-all">
-            <span class="font-mono">curl -sSL </span>
-            <a class="text-blue-600 hover:underline">
-              https://gist.githubusercontent.com/sureshairlift/7a63968352346a3d0b8acd4b4ab9b224/raw/installer.sh
-            </a>
-            <span class="font-mono"> | sh</span>
-          </div>
+  <!-- Channel context strip -->
+  <div *ngIf="conv" class="px-4 py-2 border-b border-gray-100 bg-gray-50/60 text-[12px] text-gray-600 truncate">
+    Pinned in <span class="font-medium text-gray-800">{{ conv.name }}</span>
+  </div>
+
+  <!-- Tabs: Messages + Resources -->
+  <div class="flex items-center gap-1 px-3 pt-3 pb-0 border-b border-gray-100">
+    <button (click)="setTab('messages')"
+            [class]="'relative px-3 py-2 text-[13px] transition flex items-center gap-1.5 ' +
+              (tab === 'messages' ? 'text-blue-700 font-semibold' : 'text-gray-600 hover:text-gray-900')">
+      Messages
+      <span [class]="'text-[11px] font-medium rounded-full px-1.5 py-0.5 tabular-nums ' +
+                     (tab === 'messages' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')">
+        {{ pinnedMessages().length }}
+      </span>
+      <span *ngIf="tab === 'messages'"
+            class="absolute left-2 right-2 -bottom-px h-0.5 bg-blue-600 rounded-full"></span>
+    </button>
+    <button (click)="setTab('resources')"
+            [class]="'relative px-3 py-2 text-[13px] transition flex items-center gap-1.5 ' +
+              (tab === 'resources' ? 'text-blue-700 font-semibold' : 'text-gray-600 hover:text-gray-900')">
+      Resources
+      <span [class]="'text-[11px] font-medium rounded-full px-1.5 py-0.5 tabular-nums ' +
+                     (tab === 'resources' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')">
+        {{ resources().length }}
+      </span>
+      <span *ngIf="tab === 'resources'"
+            class="absolute left-2 right-2 -bottom-px h-0.5 bg-blue-600 rounded-full"></span>
+    </button>
+  </div>
+
+  <!-- Body -->
+  <div class="flex-1 overflow-y-auto scrollable">
+    <!-- ─────────── Messages tab ─────────── -->
+    <ng-container *ngIf="tab === 'messages'">
+      <div *ngIf="pinnedMessages().length === 0; else msgList"
+           class="flex flex-col items-center justify-center text-center py-16 px-6 text-gray-500">
+        <app-icon name="pin" [size]="32" class="mb-2 text-gray-300"></app-icon>
+        <div class="text-[14px] font-medium text-gray-700">No pinned messages</div>
+        <div class="text-[12px] text-gray-500 mt-1 max-w-[260px]">
+          Hover any message and choose Pin to anchor important content — decisions, links, updates.
         </div>
       </div>
-    </div>
+      <ng-template #msgList>
+        <div class="py-1">
+          <!-- Whole row is clickable — jumps the conversation pane to
+               the pinned message and highlights it briefly. The Unpin
+               button stops propagation so its own click doesn't also
+               navigate. -->
+          <div *ngFor="let m of pinnedMessages()"
+               (click)="onOpenMessage(m.id)"
+               class="group flex items-start gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50 transition cursor-pointer">
+            <app-avatar [user]="senderFor(m.sender)" [size]="32"></app-avatar>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-baseline gap-2">
+                <span class="text-[13px] font-medium text-gray-900 truncate">{{ senderFor(m.sender)?.name || 'Unknown' }}</span>
+                <span class="text-[11px] text-gray-500 shrink-0">{{ m.time }}</span>
+              </div>
+              <!-- Render the same way the conversation bubble does so
+                   mentions, links, bold/italic etc. survive into the
+                   board preview. line-clamp-3 keeps each row tight;
+                   the message-html class re-applies prose styles for
+                   the sanitized HTML branch. -->
+              <div *ngIf="m.html; else pinnedTextOnly"
+                   class="text-[13px] text-gray-700 mt-0.5 line-clamp-3 break-words message-html"
+                   [innerHTML]="m.html | safeHtml"></div>
+              <ng-template #pinnedTextOnly>
+                <div *ngIf="m.text; else pinnedFallback"
+                     class="text-[13px] text-gray-700 mt-0.5 line-clamp-3 whitespace-pre-wrap break-words"
+                     [innerHTML]="m.text | renderText"></div>
+                <ng-template #pinnedFallback>
+                  <div class="text-[13px] text-gray-500 italic mt-0.5">
+                    {{ m.attachments?.length ? '📎 ' + m.attachments!.length + ' attachment(s)' : '—' }}
+                  </div>
+                </ng-template>
+              </ng-template>
+              <!-- Attachment chips so a media-only pin still surfaces
+                   its filenames here, not just on the Resources tab. -->
+              <div *ngIf="m.attachments?.length" class="flex flex-wrap gap-1.5 mt-1.5">
+                <span *ngFor="let a of m.attachments"
+                      class="inline-flex items-center gap-1 text-[11px] text-gray-600 bg-gray-100 rounded-full px-2 py-0.5">
+                  <app-icon name="paperclip" [size]="10"></app-icon>
+                  <span class="truncate max-w-[160px]">{{ a.name || 'attachment' }}</span>
+                </span>
+              </div>
+            </div>
+            <button (click)="$event.stopPropagation(); onUnpin(m.id)"
+                    class="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition shrink-0"
+                    title="Unpin">
+              <app-icon name="x" [size]="13" class="text-gray-500"></app-icon>
+            </button>
+          </div>
+        </div>
+      </ng-template>
+    </ng-container>
 
-    <h3 class="text-[18px] font-medium text-gray-900 mb-3">Pinned Resources</h3>
-    <button class="flex items-center gap-2 text-blue-700 text-[14px] font-medium mb-4">
-      <span class="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center">
-        <app-icon name="plus" [size]="12"></app-icon>
-      </span>
-      Add Resources
-    </button>
-
-    <div class="text-[12px] text-gray-500 mb-2">Resource Suggestions</div>
-    <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center gap-3 hover:border-blue-300">
-      <div class="w-8 h-8 rounded bg-red-500 text-white flex items-center justify-center text-[12px] font-medium">A</div>
-      <div class="w-8 h-8 rounded bg-blue-50 flex items-center justify-center">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="#1a73e8">
-          <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6z"/>
-        </svg>
+    <!-- ─────────── Resources tab ─────────── -->
+    <ng-container *ngIf="tab === 'resources'">
+      <div *ngIf="resources().length === 0; else resList"
+           class="flex flex-col items-center justify-center text-center py-16 px-6 text-gray-500">
+        <app-icon name="folder-open" [size]="32" class="mb-2 text-gray-300"></app-icon>
+        <div class="text-[14px] font-medium text-gray-700">No pinned resources</div>
+        <div class="text-[12px] text-gray-500 mt-1 max-w-[260px]">
+          Pin a message with a file, image, or doc to keep important resources at hand.
+        </div>
       </div>
-      <div class="flex-1">
-        <div class="text-[13px] font-medium">Tariff Simulator Ad Script</div>
-        <div class="text-[11px] text-gray-500">Ashwath Airlift · Monday, Apr 6</div>
-      </div>
-      <button class="text-blue-600 hover:bg-blue-50 rounded-full p-1">
-        <app-icon name="plus" [size]="16"></app-icon>
-      </button>
-    </div>
+      <ng-template #resList>
+        <div class="py-1">
+          <button *ngFor="let r of resources()"
+                  (click)="onOpenResource(r)"
+                  class="w-full group flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 text-left border-b border-gray-50 transition">
+            <div class="w-9 h-9 shrink-0 rounded bg-gray-100 flex items-center justify-center">
+              <app-icon
+                [name]="r.attachment.type === 'image' ? 'image' :
+                        r.attachment.type === 'video' ? 'film' :
+                        r.attachment.type === 'audio' ? 'music' : 'paperclip'"
+                [size]="16" class="text-gray-500"></app-icon>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-[13px] font-medium text-gray-900 truncate">{{ r.attachment.name || 'attachment' }}</div>
+              <div class="text-[11px] text-gray-500 truncate">
+                {{ extOf(r.attachment) }}
+                <ng-container *ngIf="r.attachment.size"> · {{ r.attachment.size }}</ng-container>
+                <ng-container *ngIf="r.sender?.name"> · {{ r.sender?.name }}</ng-container>
+                <ng-container *ngIf="r.time"> · {{ r.time }}</ng-container>
+              </div>
+            </div>
+            <app-icon name="external-link" [size]="14"
+                      class="text-gray-400 opacity-0 group-hover:opacity-100 transition shrink-0"></app-icon>
+          </button>
+        </div>
+      </ng-template>
+    </ng-container>
   </div>
 </app-side-panel-shell>

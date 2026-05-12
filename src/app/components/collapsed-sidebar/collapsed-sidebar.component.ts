@@ -3,6 +3,7 @@ import { CommonModule } from "@angular/common";
 import { ChatStateService } from "../../services/chat-state.service";
 import { IconComponent } from "../icon/icon.component";
 import { SectionId, ViewKey } from "../../models/types";
+import { NotoEmojiPipe, notoWebpFallback } from "../../services/noto-emoji.pipe";
 
 interface CollapsedItem {
   key: string;
@@ -27,7 +28,7 @@ interface CollapsedItem {
 @Component({
   selector: "app-collapsed-sidebar",
   standalone: true,
-  imports: [CommonModule, IconComponent],
+  imports: [CommonModule, IconComponent, NotoEmojiPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: "block shrink-0 h-full" },
   templateUrl: "./collapsed-sidebar.component.html",
@@ -35,6 +36,7 @@ interface CollapsedItem {
 })
 export class CollapsedSidebarComponent {
   state = inject(ChatStateService);
+  notoWebpFallback = notoWebpFallback;
 
   /** Item list, computed reactively from current state. */
   items = computed<CollapsedItem[]>(() => {
@@ -96,11 +98,9 @@ export class CollapsedSidebarComponent {
         tip: "Direct messages", info: `${directCount} 1:1 conversation${directCount === 1 ? "" : "s"}`,
         active: sec === "direct",
         onClick: () => this.state.setSection("direct") },
-      { key: "test", iconName: "folder-open",
-        tip: "Test Section", info: "Test conversations",
-        active: sec === "test",
-        onClick: () => this.state.setSection("test") },
-      { key: "spaces", iconName: "hash",
+      // "test" no longer a built-in — collapsed sidebar drops the
+      // shortcut. Custom sections appear elsewhere in this rail.
+      { key: "spaces", iconName: "users",
         tip: "Spaces", info: `${spacesCount} group space${spacesCount === 1 ? "" : "s"}`,
         active: sec === "spaces",
         onClick: () => this.state.setSection("spaces") },

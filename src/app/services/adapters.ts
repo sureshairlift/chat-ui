@@ -80,13 +80,17 @@ function legacyType(t: ApiChannelType): ConversationType {
   }
 }
 
-/** Build initials from a display name. Falls back to the channel id's
- *  first 2 chars if name is empty. */
+// Color + initials logic lives in services/avatar-helpers.ts so every
+// place that renders an avatar (adapter, bubble, message-info panel,
+// board panel) reaches for the SAME function. Re-imported here as
+// short aliases for the existing call sites.
+import { initialsForName, paletteIndexFor as sharedPaletteIndexFor,
+         AVATAR_PALETTE_PAIRS as SHARED_PALETTE } from './avatar-helpers';
+
+/** Build initials from a display name. Wrapper around the shared
+ *  `initialsForName` so the legacy callsites here keep compiling. */
 function initialsOf(name: string, fallback: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return fallback.slice(0, 2).toUpperCase();
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  return initialsForName(name, fallback);
 }
 
 /** Convert a backend ApiChannel into the legacy Conversation shape +
@@ -99,24 +103,58 @@ export function adaptChannel(api: ApiChannel, me: UserRef): LiveConversation {
   const name = api.name || directChannelName(api, me) || 'Untitled';
   const lastTime = api.last_message?.created_on ?? api.last_activity_at;
 
+  // For DM-shaped channels (direct + ai_direct), the conversation
+  // header avatar represents the OTHER PERSON — so seed color +
+  // initials off their user_ref instead of the channel id. That's
+  // what makes the header avatar match the bubble avatar for the
+  // same person (otherwise the header's "Rajkumar K" shows in
+  // orange while his bubble shows in green — same user, two seeds).
+  const avatarSeed = directAvatarSeed(api, me);
+
   return {
     id: api.id,
     type,
     name,
-    initials: initialsOf(name, api.id),
+    initials: initialsOf(name, avatarSeed || api.id),
     // Tone is type-aware: 1:1s get the dark solid, groups get the light
-    // tinted treatment. See colorForChannel for the mapping.
-    color: colorForChannel(api.type, api.id),
+    // tinted treatment. See colorForChannel for the mapping. Seed is
+    // the other party's ref for DMs, the channel id otherwise.
+    color: colorForChannel(api.type, avatarSeed || api.id),
+    avatarSeed,
     members: api.members_summary?.count,
     lastSnippet: api.last_message?.snippet,
     lastTime: lastTime ? prettyTime(lastTime) : undefined,
-    section: defaultSection(api),
-    pinned: false,
-    unread: false,
+    // Per-user section override wins over the type-derived default,
+    // so a conv the caller moved into a custom section stays there
+    // across reloads / devices. my_section_id is projected onto each
+    // channel by the backend's ListForUser aggregation; falls through
+    // to defaultSection() when empty (the conv hasn't been moved).
+    section: api.my_section_id || defaultSection(api),
+    // Per-member flags come from channel_members via ListForUser's
+    // projection. Without these, Pinned/Unread filters would only
+    // light up after the user opens each conv (forcing a /info fetch)
+    // — Sidebar's "Unread" + pin-floats-to-top wouldn't work on a
+    // fresh load. The two unread fields drive both the boolean
+    // (any unread) and the numeric badge.
+    pinned: !!api.my_is_pinned,
+    unread: (api.my_unread_count ?? 0) > 0,
+    muted: !!api.my_is_muted,
+    archived: !!api.my_is_archived,
     isAI,
     isExternal: api.type === 'support_direct' || api.type === 'ai_assisted',
     api,
   };
+}
+
+/** For DM-shaped channels return the OTHER member's user_ref;
+ *  otherwise empty. Used by adaptChannel above to align the
+ *  conversation header avatar with the person's bubble avatar. */
+function directAvatarSeed(api: ApiChannel, me: UserRef): string {
+  if (api.type !== 'direct' && api.type !== 'ai_direct') return '';
+  if (!api.dm_key) return '';
+  const [a, b] = api.dm_key.split('__');
+  const other = a === me ? b : a;
+  return other || '';
 }
 
 /** For 1:1 channels the channel.name is empty — derive a name from the
@@ -176,24 +214,13 @@ function defaultSection(api: ApiChannel): Conversation['section'] {
 // suffix that AvatarComponent.containerClass detects). Keeping them
 // paired by tone-family means the same channel renders consistently
 // whether it's pinged via direct or group code paths.
-const AVATAR_PALETTE_PAIRS = [
-  { solid: 'bg-emerald-500', tinted: 'bg-emerald-100 text-emerald-700' },
-  { solid: 'bg-sky-500',     tinted: 'bg-sky-100 text-sky-700' },
-  { solid: 'bg-violet-500',  tinted: 'bg-violet-100 text-violet-700' },
-  { solid: 'bg-amber-500',   tinted: 'bg-amber-100 text-amber-700' },
-  { solid: 'bg-rose-500',    tinted: 'bg-rose-100 text-rose-700' },
-  { solid: 'bg-teal-500',    tinted: 'bg-teal-100 text-teal-700' },
-  { solid: 'bg-indigo-500',  tinted: 'bg-indigo-100 text-indigo-700' },
-  { solid: 'bg-fuchsia-500', tinted: 'bg-fuchsia-100 text-fuchsia-700' },
-];
-
-/** Hash → palette index. Same seed always picks the same color pair so
- *  a channel's avatar tint is stable across reloads. */
-function paletteIndexFor(seed: string): number {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return h % AVATAR_PALETTE_PAIRS.length;
-}
+// The palette + paletteIndexFor used to live here as a local copy.
+// They're now imported from services/avatar-helpers.ts so every
+// consumer (including AvatarComponent's fallback path) picks the
+// same hue for the same user. Re-export the local names so existing
+// references below keep compiling.
+const AVATAR_PALETTE_PAIRS = SHARED_PALETTE;
+const paletteIndexFor = sharedPaletteIndexFor;
 
 /** Color picker scoped by channel kind:
  *   - direct / ai_direct        -> SOLID dark (bg-X-500, white text)
@@ -231,7 +258,10 @@ export function prettyTime(iso: string): string {
   if (min < 1) return 'now';
   if (min < 60) return `${min} min`;
   const sameDay = new Date().toDateString() === d.toDateString();
-  const opts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
+  // hour12: true forces 12-hour AM/PM regardless of the browser locale
+  // (some locales — fr-FR, de-DE, en-GB by default — would emit 24-hour
+  // and we want a consistent format across the app).
+  const opts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
   if (sameDay) return d.toLocaleTimeString([], opts);
   const yesterday = new Date(now - 86_400_000).toDateString() === d.toDateString();
   if (yesterday) return `Yesterday ${d.toLocaleTimeString([], opts)}`;
@@ -240,12 +270,12 @@ export function prettyTime(iso: string): string {
   // recycling weekday names for messages weeks/months old).
   const dayDiff = Math.floor((now - d.getTime()) / 86_400_000);
   if (dayDiff < 7) {
-    return d.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    return d.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
   }
   const sameYear = d.getFullYear() === new Date().getFullYear();
   return d.toLocaleString([], sameYear
-    ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
-    : { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }
+    : { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 // ── ApiMessage -> Message ────────────────────────────────────────────
@@ -259,7 +289,11 @@ export function adaptMessage(api: ApiMessage): LiveMessage {
     text: api.content,
     html: api.content_format === 'markdown' ? api.content : undefined,
     edited: !!api.edited_at,
-    deleted: !!api.deleted_at,
+    // Prefer the explicit `is_deleted` flag; fall back to deleted_at
+    // for older docs that only have the timestamp. Either truthy
+    // value swaps the bubble body for the tombstone placeholder.
+    deleted: !!api.is_deleted || !!api.deleted_at,
+    pinned: !!api.is_pinned,
     // Quoted-reply: backend stores the parent's user_ref + snippet on
     // quoted.{sender, snippet}. Legacy frontend Message.quoted expects
     // {sender: <display name>, senderId: <id>, text: <body>}. Strip
@@ -325,15 +359,23 @@ function adaptSender(s: NonNullable<ApiMessage['sender']>): Sender {
 }
 
 function adaptAttachment(a: ApiAttachment): Attachment {
+  // Image / video previews fall back to the source URL when no
+  // explicit thumb_url is provided. Legacy migrated attachments
+  // never carry thumb_url but DO carry the file's CDN URL — using
+  // it as the preview source means the bubble renders the real
+  // image/video instead of a gradient placeholder.
+  const isPreviewable = a.kind === 'image' || a.kind === 'video';
+  const preview = a.thumb_url ?? (isPreviewable ? a.url : undefined);
   return {
     type: a.kind,
     name: a.filename,
     size: a.size ? humanSize(a.size) : undefined,
     ext: a.filename?.split('.').pop()?.toLowerCase(),
     mime: a.mime,
-    preview: a.thumb_url ?? undefined,
+    preview,
     aspectRatio: a.width && a.height ? `${a.width} / ${a.height}` : undefined,
     duration: a.duration ? `${Math.round(a.duration)}s` : undefined,
+    url: a.url,
   };
 }
 

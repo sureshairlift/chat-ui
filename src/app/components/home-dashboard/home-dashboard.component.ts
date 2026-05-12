@@ -160,7 +160,7 @@ export class HomeDashboardComponent implements OnInit, OnDestroy {
   });
   timeStr = computed(() => {
     this.tickNow();
-    return new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
   });
 
   freshnessLabel = computed(() => {

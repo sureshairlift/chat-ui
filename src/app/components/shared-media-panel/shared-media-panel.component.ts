@@ -46,7 +46,9 @@ export class SharedMediaPanelComponent implements OnChanges {
 
   @Input() conv: Conversation | null = null;
   @Input() fullscreen = false;
+  @Input() width = 380;
   @Output() closed = new EventEmitter<void>();
+  @Output() startResize = new EventEmitter<MouseEvent>();
 
   tab = signal<TabKey>("all");
 
@@ -98,18 +100,32 @@ export class SharedMediaPanelComponent implements OnChanges {
     // entries — the shared-media panel only shows files/media.
     const flattened: SharedItem[] = items
       .filter((it) => it.kind !== "link")
-      .map((it, i) => ({
-        type: it.kind as Attachment["type"],
-        name: it.filename ?? it.url,
-        ext: it.filename?.split(".").pop()?.toLowerCase(),
-        size: it.size ? humanReadableSize(it.size) : undefined,
-        mime: it.mime,
-        preview: it.thumb_url,
-        msgId: it.message_id,
-        attIdx: i,
-        sender: it.shared_by?.ref,
-        time: it.shared_on,
-      } as SharedItem));
+      .map((it, i) => {
+        // Image / video previews fall back to the source URL when no
+        // dedicated thumb_url exists — same rule the bubble adapter uses
+        // (see services/adapters.ts:adaptAttachment). Without this the
+        // shared-media grid showed a placeholder gradient even though
+        // the file URL is reachable.
+        const isPreviewable = it.kind === "image" || it.kind === "video";
+        const preview = it.thumb_url ?? (isPreviewable ? it.url : undefined);
+        // The user-facing label prefers `display_name` when the legacy
+        // doc carried one; the URL always points at the on-disk
+        // storage filename (already populated correctly upstream).
+        const label = it.display_name || it.filename || it.url;
+        return {
+          type: it.kind as Attachment["type"],
+          name: label,
+          ext: (it.filename ?? label)?.split(".").pop()?.toLowerCase(),
+          size: it.size ? humanReadableSize(it.size) : undefined,
+          mime: it.mime,
+          preview,
+          url: it.url,
+          msgId: it.message_id,
+          attIdx: i,
+          sender: it.shared_by?.ref,
+          time: it.shared_on,
+        } as SharedItem;
+      });
     this.serverItems.set(flattened);
   }
 

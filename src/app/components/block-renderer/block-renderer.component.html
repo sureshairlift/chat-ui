@@ -22,8 +22,18 @@
 
   <hr *ngSwitchCase="'divider'" class="my-2 border-gray-200" />
 
-  <!-- table -->
-  <div *ngSwitchCase="'table'" class="rounded-lg border border-gray-200 overflow-hidden text-sm">
+  <!-- table — suppressed entirely. The AI emits a structured `table`
+       block alongside a `markdown` block that contains the same data
+       as a markdown table; rendering both produced a duplicate
+       (often with placeholder-dash rows on the structured side
+       because the column keys don't always match the rows). Keeping
+       just the markdown path means the table renders once with the
+       correct values. Empty `*ngSwitchCase` so the unmatched case
+       still terminates correctly — the actual table markup is kept
+       below but wrapped in `*ngIf="false"` for easy re-enable. -->
+  <ng-container *ngSwitchCase="'table'"></ng-container>
+  <div *ngIf="false"
+       class="rounded-lg border border-gray-200 overflow-hidden text-sm">
     <div *ngIf="asTable(block).title" class="px-3 py-2 bg-gray-50 border-b text-gray-700 font-medium">
       {{ asTable(block).title }}
     </div>

@@ -10,6 +10,8 @@ import { SECTION_TITLES } from "../../data/section-titles";
 import { IconComponent } from "../icon/icon.component";
 import { ConversationListItemComponent } from "../conversation-list-item/conversation-list-item.component";
 import { ResizeHandleComponent } from "../resize-handle/resize-handle.component";
+import { NotoEmojiPipe, notoWebpFallback } from "../../services/noto-emoji.pipe";
+import { AiSpinnerComponent } from "../ai-spinner/ai-spinner.component";
 
 /**
  * HomeList — second pane (between sidebar and message panel).
@@ -28,7 +30,7 @@ import { ResizeHandleComponent } from "../resize-handle/resize-handle.component"
 @Component({
   selector: "app-home-list",
   standalone: true,
-  imports: [CommonModule, IconComponent, ConversationListItemComponent, ResizeHandleComponent],
+  imports: [CommonModule, IconComponent, ConversationListItemComponent, ResizeHandleComponent, NotoEmojiPipe, AiSpinnerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./home-list.component.html",
   styleUrl: "./home-list.component.css",
@@ -43,6 +45,28 @@ export class HomeListComponent implements AfterViewInit, OnDestroy {
   @Output() openDrawer = new EventEmitter<void>();
   /** Bubbles up the convId when a row's "Open in popup" menu item is clicked. */
   @Output() popOut = new EventEmitter<string>();
+
+  /** Tracks the in-flight createChannel RPC so the user can't
+   *  double-click the New AI chat button and end up with two empty
+   *  channels. */
+  creatingAIChat = signal(false);
+
+  async onStartNewAIChat(): Promise<void> {
+    if (this.creatingAIChat()) return;
+    if (!this.state.live()) {
+      // Mock mode: pick the seed "ai-new" if present, else no-op.
+      const seed = this.aiNew();
+      if (seed) this.picked.emit(seed.id);
+      return;
+    }
+    this.creatingAIChat.set(true);
+    try {
+      const id = await this.state.startNewAIChatLive();
+      if (id) this.picked.emit(id);
+    } finally {
+      this.creatingAIChat.set(false);
+    }
+  }
 
   expandedSummaries = signal<Set<string>>(new Set());
   customerFilter = signal<"all" | "direct" | "groups">("all");
@@ -62,12 +86,30 @@ export class HomeListComponent implements AfterViewInit, OnDestroy {
       .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
   });
 
-  title = computed<string>(() => {
+  /** Header emoji + label split so the template can render the emoji
+   *  as a Noto image (PNG at rest, WebP on hover) instead of plain
+   *  text. titleLabel is what the <h1> shows; titleEmoji is null when
+   *  the current section is a built-in (no custom emoji). */
+  titleEmoji = computed<string | null>(() => {
+    const sec = this.state.selectedSection();
+    const custom = this.state.customSections().find((s) => s.id === sec);
+    return custom?.emoji || null;
+  });
+  titleLabel = computed<string>(() => {
     const sec = this.state.selectedSection();
     const custom = this.state.customSections().find((s) => s.id === sec);
     if (custom) return custom.label;
     return SECTION_TITLES[sec] || "Home";
   });
+  /** Kept for any external callers (mobile drawer, breadcrumbs) that
+   *  still want a single plain-text string. */
+  title = computed<string>(() => {
+    const e = this.titleEmoji();
+    const l = this.titleLabel();
+    return e ? `${e}  ${l}` : l;
+  });
+
+  notoWebpFallback = notoWebpFallback;
 
   showFilters = computed<boolean>(() => {
     const sec = this.state.selectedSection();
@@ -103,7 +145,7 @@ export class HomeListComponent implements AfterViewInit, OnDestroy {
   defaultVisible = computed(() => {
     const sec = this.state.selectedSection();
     const convs = this.baseConvs();
-    const builtIn = new Set(["direct", "test", "spaces", "ai", "customers"]);
+    const builtIn = new Set(["direct", "spaces", "ai", "customers"]);
 
     let items: Conversation[];
     if (sec === "pinned") {

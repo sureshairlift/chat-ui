@@ -36,8 +36,12 @@ export type SectionId =
 export interface CustomSection {
   id: string;
   label: string;
-  /** Tailwind background class for the section dot/icon */
+  /** Tailwind background class for the colored # chip (used as
+   *  fallback when no emoji is set). */
   color: string;
+  /** Optional single-character emoji shown in place of the colored
+   *  # chip when set. Stored as the raw codepoint string. */
+  emoji?: string;
 }
 
 /* ------------------------------------------------------------- Conversations */
@@ -50,6 +54,12 @@ export interface Conversation {
   name: string;
   initials: string;
   color: string;
+  /** Optional seed for the avatar's color + initials derivation. For
+   *  DM / AI-direct channels this is the OTHER party's user_ref so
+   *  the conversation header avatar matches the same person's bubble
+   *  avatar exactly (same hue, same initials). For groups/spaces it
+   *  stays undefined — the channel id is used. */
+  avatarSeed?: string;
 
   presence?: "active" | "away" | "offline";
   members?: number;
@@ -61,6 +71,8 @@ export interface Conversation {
   section: SectionId;
   pinned?: boolean;
   unread?: boolean;
+  muted?: boolean;
+  archived?: boolean;
   /** When unread, this is the id of the first unread msg — used for the unread divider */
   unreadStartMsgId?: string;
 
@@ -92,6 +104,11 @@ export interface Attachment {
   aspectRatio?: string;
   /** For audio/video */
   duration?: string;
+  /** Direct URL to the underlying file. For images/videos this is the
+   *  source URL the inline preview pulls from; for files it's the
+   *  download link. Migrated legacy attachments often lack this — the
+   *  bubble's renderer falls back to a generic file card in that case. */
+  url?: string;
 }
 
 export interface ThreadReply {
@@ -146,6 +163,12 @@ export interface Message {
    *  muted "This message was deleted by the sender" placeholder in
    *  place of the body, attachments, reactions, and thread chip. */
   deleted?: boolean;
+  /** True when the message is pinned to the channel's board. Comes
+   *  straight from the backend's `is_pinned` flag so the bubble can
+   *  render a pinned indicator without consulting the separate
+   *  pinnedMsgs cache (which only holds messages pinned in this
+   *  session + whatever loadPinnedLive hydrated). */
+  pinned?: boolean;
   attachments?: Attachment[];
   thread?: ThreadMeta;
   reactions?: Reaction[];

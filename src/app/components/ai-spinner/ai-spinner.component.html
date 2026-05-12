@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 100 100"
+     [attr.width]="size" [attr.height]="size"
+     role="img"
+     aria-label="AI thinking"
+     class="ai-spinner__svg shrink-0">
+  <title>AI thinking</title>
+  <defs>
+    <!-- Per-instance gradient ids so multiple spinners on the same
+         page don't collide on the same `id`. Without this, two
+         <defs> with the same id make the second SVG paint flat / grey
+         in some browsers. -->
+    <linearGradient [attr.id]="gradientId" x1="0%" y1="0%" x2="100%" y2="100%" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#3B82F6"/>
+      <stop offset="50%"  stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#F472B6"/>
+      <animateTransform attributeName="gradientTransform" type="rotate"
+                        from="0 50 50" to="360 50 50" dur="8s" repeatCount="indefinite"/>
+    </linearGradient>
+    <radialGradient [attr.id]="auraId" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#A855F7" stop-opacity="0.15"/>
+      <stop offset="60%"  stop-color="#3B82F6" stop-opacity="0.03"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <circle class="ai-spinner__aura" cx="50" cy="50" r="48" [attr.fill]="auraUrl"/>
+
+  <g class="ai-spinner__composition">
+    <path class="ai-spinner__spark ai-spinner__spark--tl"
+          d="M 20 13 C 20 18 22 20 27 20 C 22 20 20 22 20 27 C 20 22 18 20 13 20 C 18 20 20 18 20 13 Z"
+          [attr.fill]="gradientUrl"/>
+    <path class="ai-spinner__spark ai-spinner__spark--tr"
+          d="M 78 6 C 78 17 83 22 94 22 C 83 22 78 27 78 38 C 78 27 73 22 62 22 C 73 22 78 17 78 6 Z"
+          [attr.fill]="gradientUrl"/>
+    <path class="ai-spinner__spark ai-spinner__spark--main"
+          d="M 45 24 C 45 45 56 56 77 56 C 56 56 45 67 45 88 C 45 67 34 56 13 56 C 34 56 45 45 45 24 Z"
+          [attr.fill]="gradientUrl"/>
+    <path class="ai-spinner__spark ai-spinner__spark--bl"
+          d="M 18 70 C 18 77 21 80 28 80 C 21 80 18 83 18 90 C 18 83 15 80 8 80 C 15 80 18 77 18 70 Z"
+          [attr.fill]="gradientUrl"/>
+  </g>
+</svg>
+
+<span *ngIf="text" class="ai-spinner__text text-[12px] text-purple-700 truncate max-w-[240px]">
+  {{ text }}
+</span>

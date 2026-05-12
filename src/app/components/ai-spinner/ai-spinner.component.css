@@ -1,0 +1,83 @@
+/* AI Sparkle Loading Indicator — v15 stagger-out choreography.
+ * Scoped via component encapsulation so the keyframes / class names
+ * don't collide if some other surface uses similar names later. */
+
+.ai-spinner__aura {
+  transform-origin: 50px 50px;
+  animation: ai-spinner-aura-breathe 5s ease-in-out infinite;
+}
+
+.ai-spinner__composition {
+  transform-origin: 50px 50px;
+  animation: ai-spinner-drift 12s ease-in-out infinite;
+}
+
+/* Stagger-out delays: BL leads in/out, main anchors the cycle. */
+.ai-spinner__spark--bl {
+  transform-origin: 18px 80px;
+  animation: ai-spinner-choreo-ccw 7s linear 0s infinite both;
+}
+.ai-spinner__spark--tl {
+  transform-origin: 20px 20px;
+  animation: ai-spinner-choreo-cw 7s linear 0.25s infinite both;
+}
+.ai-spinner__spark--tr {
+  transform-origin: 78px 22px;
+  animation: ai-spinner-choreo-cw 7s linear 0.5s infinite both;
+}
+.ai-spinner__spark--main {
+  transform-origin: 45px 56px;
+  animation: ai-spinner-choreo-cw 7s linear 0.75s infinite both;
+}
+
+@keyframes ai-spinner-aura-breathe {
+  0%, 100% { transform: scale(0.9);  opacity: 0.6; }
+  50%      { transform: scale(1.05); opacity: 1; }
+}
+
+@keyframes ai-spinner-drift {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50%      { transform: rotate(1.5deg); }
+}
+
+@keyframes ai-spinner-choreo-cw {
+  0%   { opacity: 0; transform: scale(0)    rotate(0deg);    animation-timing-function: cubic-bezier(.4, 0, .2, 1); }
+  6%   { opacity: 1; transform: scale(1.15) rotate(0deg);    animation-timing-function: ease-out; }
+  10%  {              transform: scale(0.95) rotate(0deg);   animation-timing-function: ease-in-out; }
+  14%  {              transform: scale(1)    rotate(0deg);   animation-timing-function: ease-in-out; }
+  30%  {              transform: scale(1)    rotate(0deg);   animation-timing-function: cubic-bezier(.65, 0, .35, 1); }
+  48%  {              transform: scale(1.06) rotate(180deg); animation-timing-function: cubic-bezier(.65, 0, .35, 1); }
+  65%  { opacity: 1; transform: scale(1)    rotate(360deg); animation-timing-function: ease-out; }
+  72%  { opacity: 0.5; transform: scale(0.85) rotate(360deg); animation-timing-function: cubic-bezier(.34, 1.56, .64, 1); }
+  79%  { opacity: 1;   transform: scale(1.15) rotate(360deg); animation-timing-function: ease-out; }
+  82%  {                transform: scale(1)    rotate(360deg); animation-timing-function: cubic-bezier(.55, 0, 1, .45); }
+  92%  { opacity: 0.6; transform: scale(0.85) rotate(360deg); }
+  100% { opacity: 0;   transform: scale(0)    rotate(360deg); }
+}
+
+@keyframes ai-spinner-choreo-ccw {
+  0%   { opacity: 0; transform: scale(0)    rotate(0deg);     animation-timing-function: cubic-bezier(.4, 0, .2, 1); }
+  6%   { opacity: 1; transform: scale(1.15) rotate(0deg);     animation-timing-function: ease-out; }
+  10%  {              transform: scale(0.95) rotate(0deg);    animation-timing-function: ease-in-out; }
+  14%  {              transform: scale(1)    rotate(0deg);    animation-timing-function: ease-in-out; }
+  30%  {              transform: scale(1)    rotate(0deg);    animation-timing-function: cubic-bezier(.65, 0, .35, 1); }
+  48%  {              transform: scale(1.06) rotate(-180deg); animation-timing-function: cubic-bezier(.65, 0, .35, 1); }
+  65%  { opacity: 1; transform: scale(1)    rotate(-360deg); animation-timing-function: ease-out; }
+  72%  { opacity: 0.5; transform: scale(0.85) rotate(-360deg); animation-timing-function: cubic-bezier(.34, 1.56, .64, 1); }
+  79%  { opacity: 1;   transform: scale(1.15) rotate(-360deg); animation-timing-function: ease-out; }
+  82%  {                transform: scale(1)    rotate(-360deg); animation-timing-function: cubic-bezier(.55, 0, 1, .45); }
+  92%  { opacity: 0.6; transform: scale(0.85) rotate(-360deg); }
+  100% { opacity: 0;   transform: scale(0)    rotate(-360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-spinner__aura,
+  .ai-spinner__composition,
+  .ai-spinner__spark--main,
+  .ai-spinner__spark--tr,
+  .ai-spinner__spark--bl,
+  .ai-spinner__spark--tl {
+    animation: none;
+    opacity: 0.85;
+  }
+}

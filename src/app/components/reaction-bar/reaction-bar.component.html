@@ -1,7 +1,52 @@
-<div class="flex items-center gap-0.5 bg-white border border-gray-200 rounded-full px-1 py-0.5 shadow-md">
+<div *ngIf="!expanded(); else fullPicker"
+     class="flex items-center gap-0.5 bg-white border border-gray-200 rounded-full px-1 py-0.5 shadow-md">
   <button
-    *ngFor="let emoji of EMOJIS"
-    (click)="react.emit({ msgId, emoji })"
-    class="text-[16px] hover:bg-gray-100 rounded-full w-7 h-7 flex items-center justify-center"
-  >{{ emoji }}</button>
+    *ngFor="let e of QUICK_PICK"
+    (click)="onReact(e.code)"
+    [title]="e.name"
+    class="hover:bg-gray-100 rounded-full w-7 h-7 flex items-center justify-center"
+  >
+    <app-emoji [code]="e.code" [name]="e.name" [size]="20"></app-emoji>
+  </button>
+  <!-- Open full catalog. Separated from the quick picks by a thin
+       divider so it reads as a distinct affordance, not "another
+       quick reaction". -->
+  <div class="w-px h-5 bg-gray-200 mx-0.5"></div>
+  <button (click)="$event.stopPropagation(); toggleExpand()"
+          title="More reactions"
+          class="hover:bg-gray-100 rounded-full w-7 h-7 flex items-center justify-center text-gray-600">
+    <app-icon name="plus" [size]="14"></app-icon>
+  </button>
 </div>
+
+<!-- Expanded view — search + grid of the full catalog. Wider than
+     the collapsed pill but matches the dock width so reactions feel
+     consistent with the composer's emoji picker. -->
+<ng-template #fullPicker>
+  <div (click)="$event.stopPropagation()"
+       class="w-[280px] bg-white border border-gray-200 rounded-xl shadow-lg p-2">
+    <div class="flex items-center gap-1.5 mb-2">
+      <div class="relative flex-1">
+        <app-icon name="search" [size]="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"></app-icon>
+        <input [ngModel]="search()" (ngModelChange)="search.set($event)"
+               placeholder="Search emojis"
+               class="w-full text-[12px] bg-gray-50 rounded pl-7 pr-2 py-1 border border-gray-200 focus:border-blue-400 outline-none" />
+      </div>
+      <button (click)="toggleExpand()" title="Back to quick picks"
+              class="shrink-0 hover:bg-gray-100 rounded-full w-7 h-7 flex items-center justify-center text-gray-500">
+        <app-icon name="x" [size]="14"></app-icon>
+      </button>
+    </div>
+    <div class="grid grid-cols-8 gap-0.5 max-h-48 overflow-y-auto scrollable pr-1">
+      <button *ngFor="let e of filtered()" (click)="onReact(e.code)"
+              [title]="e.name"
+              class="hover:bg-gray-100 rounded-md aspect-square w-full flex items-center justify-center">
+        <app-emoji [code]="e.code" [name]="e.name" [size]="20"></app-emoji>
+      </button>
+      <div *ngIf="filtered().length === 0"
+           class="col-span-8 py-2 text-center text-[11px] text-gray-500 italic">
+        No matches
+      </div>
+    </div>
+  </div>
+</ng-template>

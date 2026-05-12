@@ -99,6 +99,25 @@ export class BlockRendererComponent {
     return String(v);
   }
 
+  /** True when the table block has actual data to show. Used to
+   *  suppress empty / placeholder table blocks that the AI sometimes
+   *  emits alongside a markdown version of the same data — without
+   *  this, the placeholder renders as a grid of `—` dashes above the
+   *  real markdown table. A table is "usable" when at least one row
+   *  has at least one non-empty cell value across the declared
+   *  columns. */
+  hasUsableTableData(block: Block): boolean {
+    const t = this.asTable(block);
+    if (!t.rows || t.rows.length === 0) return false;
+    if (!t.columns || t.columns.length === 0) return false;
+    return t.rows.some((row) =>
+      t.columns.some((c) => {
+        const v = row[c.key];
+        return v !== null && v !== undefined && v !== '';
+      }),
+    );
+  }
+
   /** Compute SVG bar layout for the chart block. Single-series bar
    *  charts render as side-by-side rectangles; multi-series stacks the
    *  bars per label. Good enough for the common case; chart.js takes
@@ -193,6 +212,7 @@ function formatDate(s: string, withTime: boolean): string {
   if (withTime) {
     opts.hour = 'numeric';
     opts.minute = '2-digit';
+    opts.hour12 = true;
   }
   return d.toLocaleDateString([], opts);
 }

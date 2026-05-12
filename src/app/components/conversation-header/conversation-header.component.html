@@ -13,14 +13,22 @@
           <button (click)="toggleHeaderMenu()"
             class="flex items-center gap-1.5 max-w-full text-left hover:bg-gray-100 rounded px-1 -mx-1 py-0.5 transition"
             title="Conversation options">
+            <!-- Title — while the AI auto-title SSE is streaming,
+                 prefer its in-flight text so the user sees the new
+                 name "type out" in real time. Once the stream ends,
+                 the persisted `conv.name` takes over again. -->
             <h2 class="text-[15px] sm:text-[16px] font-medium text-gray-900 truncate min-w-0 flex-1">
-              {{ conv.name }}
+              <ng-container *ngIf="streamingTitle() as st; else staticName">
+                {{ st }}<span class="ml-0.5 inline-block w-0.5 h-3 bg-purple-500 animate-pulse align-middle"
+                              *ngIf="!streamingTitleDone()"></span>
+              </ng-container>
+              <ng-template #staticName>{{ conv.name }}</ng-template>
             </h2>
             <span *ngIf="conv.isAI"
               class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 text-purple-700 shrink-0">
               AI
             </span>
-            <span *ngIf="conv.isExternal && !isMobile"
+            <span *ngIf="conv.isExternal && !conv.isAI && !isMobile"
               class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex items-center gap-1 shrink-0">
               <app-icon name="globe" [size]="9"></app-icon>
               CUSTOMER
@@ -76,11 +84,11 @@
             {{ handoffNotice.label }}
           </div>
 
-          <!-- 1:1 chats: presence dot + last-activity. The dot pulses
-               green when active (within the last minute) and silently
-               sits gray otherwise — the colored ring + label give a
-               subtle, calm read-out vs the loud "online now!" pattern. -->
-          <div *ngIf="isDirectChat && !isMobile"
+          <!-- 1:1 chats: presence dot + last-activity. Hidden in AI
+               convs — the "Powered by Airlift Intelligence" subtitle
+               already conveys the relevant context and the AI has
+               no "last seen" semantics. -->
+          <div *ngIf="isDirectChat && !conv.isAI && !isMobile"
                class="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1.5">
             <span *ngIf="lastActivityLabel"
                   [class]="'inline-block w-1.5 h-1.5 rounded-full ' + (lastActivityLabel === 'Active now' ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300')"></span>
@@ -88,10 +96,13 @@
           </div>
 
           <!-- Standalone avatar pile — used for groups WITHOUT a text
-               subtitle (group_dm, ai_assisted, bot_channel). The pile-
-               sharing-a-line case is handled via *ngTemplateOutlet
-               above for space / external-group. -->
-          <div *ngIf="!isDirectChat && conv.type !== 'space' && conv.type !== 'external-group' && memberPile.length > 0 && !isMobile"
+               subtitle (group_dm, ai_assisted, bot_channel). Hidden
+               in AI convs entirely — the AI counts as a "member" in
+               ai_assisted channels but surfacing the human roster
+               adds noise to a 1:1-feeling chat. The pile-sharing-a-
+               line case is handled via *ngTemplateOutlet above for
+               space / external-group. -->
+          <div *ngIf="!isDirectChat && !conv.isAI && conv.type !== 'space' && conv.type !== 'external-group' && memberPile.length > 0 && !isMobile"
                class="mt-0.5 flex items-center gap-2">
             <ng-container *ngTemplateOutlet="memberPileTpl"></ng-container>
           </div>
@@ -106,11 +117,14 @@
           <ng-template #memberPileTpl>
             <span *ngIf="memberPile.length > 0" class="flex items-center gap-1.5 shrink-0">
               <span class="flex items-center -space-x-1">
+                <!-- Each chip routes through <app-avatar> so the same
+                     user_ref → same hue + initials as everywhere else
+                     in the app. AvatarComponent's fallback derives
+                     color from id and initials from name via the
+                     shared avatar-helpers. -->
                 <ng-container *ngFor="let m of memberPile">
-                  <span *ngIf="senderForRef(m.user_ref) as s"
-                        [title]="s.name"
-                        [class]="'inline-flex items-center justify-center w-[18px] h-[18px] rounded-full text-[9px] font-semibold leading-none cursor-default transition-transform hover:scale-110 hover:z-10 ' + s.color + (s.color.includes('text-') ? '' : ' text-white')">
-                    {{ s.initials }}
+                  <span class="cursor-default transition-transform hover:scale-110 hover:z-10">
+                    <app-avatar [user]="memberPileUser(m)" [size]="18"></app-avatar>
                   </span>
                 </ng-container>
               </span>
@@ -209,10 +223,8 @@
           </svg>
         </button>
 
-        <button *ngIf="showPinnedInline()" (click)="state.openPinned()" [class]="actionBtnClass(pinnedActive)"
-          title="Pinned messages">
-          <app-icon name="pin" [size]="18"></app-icon>
-        </button>
+        <!-- Pinned standalone button removed — the Board panel now
+             hosts both pinned messages and resources in one tabbed view. -->
 
         <!-- More menu -->
         <div *ngIf="moreItems().length > 0" #moreRef class="relative">

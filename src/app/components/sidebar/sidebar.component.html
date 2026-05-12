@@ -88,8 +88,19 @@
         <ng-container *ngFor="let row of orderedSections(); let i = index; trackBy: trackBySection">
           <div #sectionRowEl
                (pointerdown)="onRowPointerDown(i, $event)"
-               [class]="'group/sec relative rounded-md transition ' + rowDragClass(i)"
+               (dragover)="onConvDragOver($event, row.id)"
+               (dragleave)="onConvDragLeave($event, row.id)"
+               (drop)="onConvDrop($event, row.id)"
+               [class]="'group/sec relative rounded-md transition ' + rowDragClass(i, row.id)"
                style="touch-action: none;">
+            <!-- Inline warning pill shown while a drag is hovering a
+                 section whose type rules reject this conv. Tells the
+                 user WHY the drop cursor flipped to no-entry. -->
+            <div *ngIf="invalidDropTargetId() === row.id"
+                 class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 bg-white text-red-600 text-[11px] rounded ring-1 ring-red-200 shadow-sm pointer-events-none flex items-center gap-1">
+              <app-icon name="x" [size]="10"></app-icon>
+              Can't move here
+            </div>
 
             <!-- Hover grip indicator — purely decorative, hints the row is
                  draggable. Sits on the left edge, fades in on hover. The
@@ -134,38 +145,154 @@
 
             <!-- Built-in: Direct / Test / Spaces -->
             <app-section-header
-              *ngIf="row.kind === 'direct' || row.kind === 'test' || row.kind === 'spaces'"
+              *ngIf="row.kind === 'direct' || row.kind === 'spaces'"
               [label]="row.label" [count]="row.count"
               [active]="state.selectedSection() === row.id"
               (clicked)="state.setSection(row.id)">
               <app-icon *ngIf="row.kind === 'direct'" name="message-square" [size]="18"></app-icon>
-              <app-icon *ngIf="row.kind === 'test'"   name="folder-open"    [size]="18"></app-icon>
-              <app-icon *ngIf="row.kind === 'spaces'" name="hash"           [size]="18"></app-icon>
+              <app-icon *ngIf="row.kind === 'spaces'" name="users"          [size]="18"></app-icon>
             </app-section-header>
 
-            <!-- Custom sections -->
-            <app-section-header
-              *ngIf="row.kind === 'custom'"
-              [label]="row.label" [count]="row.count"
-              [active]="state.selectedSection() === row.id"
-              (clicked)="state.setSection(row.id)">
-              <span [class]="'w-5 h-5 rounded-md flex items-center justify-center ' + (row.custom?.color || 'bg-gray-400')">
-                <app-icon name="hash" [size]="12" class="text-white"></app-icon>
-              </span>
-            </app-section-header>
+            <!-- Custom sections.
+                 DOM layout note: the header + action pill share their
+                 own `group relative` so the pill is centered on the
+                 header alone. The edit popover is a SIBLING below — if
+                 it lived inside the same wrapper, opening it would
+                 grow the wrapper's height and top-1/2 would push the
+                 pill down into the popover region. -->
+            <ng-container *ngIf="row.kind === 'custom'">
+              <div class="group relative">
+                <app-section-header
+                  [label]="row.label" [count]="row.count"
+                  [active]="state.selectedSection() === row.id"
+                  (clicked)="state.setSection(row.id)">
+                  <!-- Emoji takes priority; falls back to colored #
+                       chip for sections that pre-date the picker.
+                       PNG at rest, animated WebP on row hover via
+                       the outer group/sec scope. -->
+                  <ng-container *ngIf="row.custom?.emoji as e; else hashChip">
+                    <img [src]="e | notoEmoji:'png':72" [alt]="e"
+                         class="w-5 h-5 object-contain group-hover/sec:hidden" />
+                    <img [src]="e | notoEmoji:'webp':72" [alt]="e"
+                         (error)="notoWebpFallback($event)"
+                         class="w-5 h-5 object-contain hidden group-hover/sec:block" />
+                  </ng-container>
+                  <ng-template #hashChip>
+                    <span [class]="'w-5 h-5 rounded-md flex items-center justify-center ' + (row.custom?.color || 'bg-gray-400')">
+                      <app-icon name="hash" [size]="12" class="text-white"></app-icon>
+                    </span>
+                  </ng-template>
+                </app-section-header>
+                <!-- Action pill — white bg + shadow so it masks the
+                     section-header's trailing count + chevron on
+                     hover. Hidden entirely while editing (popover
+                     already exposes Save/Cancel + the same fields). -->
+                <div *ngIf="editingSectionId() !== row.id"
+                     class="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-px px-0.5 py-0.5 bg-white rounded-md shadow-sm ring-1 ring-gray-200">
+                  <button (click)="$event.stopPropagation(); startEditSection(row)"
+                          class="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-800"
+                          title="Edit section">
+                    <app-icon name="pencil" [size]="12"></app-icon>
+                  </button>
+                  <button (click)="$event.stopPropagation(); onDeleteSection(row.id, row.label)"
+                          class="p-1 rounded hover:bg-red-50 text-gray-500 hover:text-red-600"
+                          title="Delete section">
+                    <app-icon name="trash-2" [size]="12"></app-icon>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Inline edit popover (sibling of the header wrapper,
+                   not inside it — see DOM note above). -->
+              <div *ngIf="editingSectionId() === row.id"
+                   (click)="$event.stopPropagation()"
+                   class="mt-1 mb-2 mx-3 p-3 rounded-lg border border-gray-200 bg-white shadow-sm space-y-2">
+                <input [ngModel]="editingLabel()" (ngModelChange)="editingLabel.set($event)"
+                       (keydown.enter)="saveEdit()" (keydown.escape)="cancelEdit()"
+                       placeholder="Section name"
+                       class="w-full text-[13px] bg-transparent outline-none border-b border-gray-300 focus:border-blue-500 pb-0.5"/>
+                <div class="relative">
+                  <app-icon name="search" [size]="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"></app-icon>
+                  <input [ngModel]="editSearch()" (ngModelChange)="editSearch.set($event)"
+                         placeholder="Search emojis"
+                         class="w-full text-[12px] bg-gray-50 rounded pl-7 pr-2 py-1 border border-gray-200 focus:border-blue-400 outline-none"/>
+                </div>
+                <div class="grid grid-cols-6 gap-1.5 max-h-48 overflow-y-auto scrollable pr-1">
+                  <button *ngFor="let e of filteredEditEmojis()"
+                          type="button" (click)="toggleEditEmoji(e.c)"
+                          [title]="e.k"
+                          [class]="'group/em aspect-square w-full rounded flex items-center justify-center transition ' +
+                                   (editingEmoji() === e.c ? 'bg-blue-100 ring-1 ring-inset ring-blue-400' : 'hover:bg-gray-100')">
+                    <img [src]="e.c | notoEmoji:'png':72" [alt]="e.c"
+                         class="w-5 h-5 object-contain group-hover/em:hidden" />
+                    <img [src]="e.c | notoEmoji:'webp':512" [alt]="e.c"
+                         (error)="notoWebpFallback($event)"
+                         class="w-5 h-5 object-contain hidden group-hover/em:block" />
+                  </button>
+                  <div *ngIf="filteredEditEmojis().length === 0"
+                       class="col-span-6 py-2 text-center text-[11px] text-gray-500 italic">
+                    No matches
+                  </div>
+                </div>
+                <div class="flex items-center justify-end gap-1.5 pt-1">
+                  <button (click)="cancelEdit()"
+                          class="text-[12px] px-2 py-1 rounded text-gray-600 hover:bg-gray-100">
+                    Cancel
+                  </button>
+                  <button (click)="saveEdit()"
+                          class="text-[12px] px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700">
+                    Save
+                  </button>
+                </div>
+              </div>
+            </ng-container>
           </div>
         </ng-container>
 
-        <!-- New section creator -->
-        <div *ngIf="addingSection(); else addBtn" class="flex items-center gap-2 px-3 py-1.5 mt-1">
-          <app-icon name="plus" [size]="14" class="text-gray-500 shrink-0"></app-icon>
-          <input #sectionInput [ngModel]="newSectionName()" (ngModelChange)="newSectionName.set($event)"
-            (keydown.enter)="confirmAddSection()" (keydown.escape)="cancelAddSection()" placeholder="Section name..."
-            class="flex-1 text-[13px] bg-transparent outline-none border-b border-gray-300 focus:border-blue-500 pb-0.5"
-            autofocus />
-          <button (click)="cancelAddSection()" class="text-gray-400 hover:text-gray-600">
-            <app-icon name="x" [size]="14"></app-icon>
-          </button>
+        <!-- New section creator. Name input on top, then a scrollable
+             Noto-emoji grid below. Tap an emoji to select / tap again
+             to clear (falls back to the colored # chip). Enter
+             confirms, Esc cancels. Each grid cell renders the static
+             PNG at rest and swaps to the animated WebP on hover. -->
+        <div *ngIf="addingSection(); else addBtn" class="px-3 pt-1 pb-2 mt-1 space-y-2">
+          <div class="flex items-center gap-2">
+            <img *ngIf="newSectionEmoji() as e"
+                 [src]="e | notoEmoji:'png':72" [alt]="e"
+                 class="w-5 h-5 shrink-0 object-contain" />
+            <app-icon *ngIf="!newSectionEmoji()" name="plus" [size]="14" class="text-gray-500 shrink-0"></app-icon>
+            <input #sectionInput [ngModel]="newSectionName()" (ngModelChange)="newSectionName.set($event)"
+              (keydown.enter)="confirmAddSection()" (keydown.escape)="cancelAddSection()" placeholder="Section name..."
+              class="flex-1 text-[13px] bg-transparent outline-none border-b border-gray-300 focus:border-blue-500 pb-0.5"
+              autofocus />
+            <button (click)="cancelAddSection()" class="text-gray-400 hover:text-gray-600">
+              <app-icon name="x" [size]="14"></app-icon>
+            </button>
+          </div>
+          <!-- Search box. Filters the curated emoji list by keyword
+               (e.g., "love", "dev", "happy"). Blank query shows all. -->
+          <div class="relative">
+            <app-icon name="search" [size]="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"></app-icon>
+            <input [ngModel]="createSearch()" (ngModelChange)="createSearch.set($event)"
+                   placeholder="Search emojis"
+                   class="w-full text-[12px] bg-gray-50 rounded pl-7 pr-2 py-1 border border-gray-200 focus:border-blue-400 outline-none"/>
+          </div>
+          <div class="grid grid-cols-6 gap-1.5 max-h-48 overflow-y-auto scrollable pr-1">
+            <button *ngFor="let e of filteredCreateEmojis()"
+                    type="button" (click)="toggleEmojiPick(e.c)"
+                    [title]="e.k"
+                    [class]="'group/em aspect-square w-full rounded flex items-center justify-center transition ' +
+                             (newSectionEmoji() === e.c ? 'bg-blue-100 ring-1 ring-inset ring-blue-400' : 'hover:bg-gray-100')">
+              <img [src]="e.c | notoEmoji:'png':72" [alt]="e.c"
+                   class="w-5 h-5 object-contain group-hover/em:hidden" />
+              <img [src]="e.c | notoEmoji:'webp':512" [alt]="e.c"
+                   (error)="notoWebpFallback($event)"
+                   class="w-5 h-5 object-contain hidden group-hover/em:block" />
+            </button>
+            <div *ngIf="filteredCreateEmojis().length === 0"
+                 class="col-span-6 py-2 text-center text-[11px] text-gray-500 italic">
+              No matches
+            </div>
+          </div>
         </div>
         <ng-template #addBtn>
           <button (click)="addingSection.set(true)"

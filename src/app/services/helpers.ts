@@ -20,7 +20,37 @@ export function sanitizeHtml(html: string | null | undefined): string {
     .replace(/\son\w+\s*=\s*[^\s>]+/gi, "")
     .replace(/(href|src)\s*=\s*"(?:\s*javascript:|\s*data:)[^"]*"/gi, '$1="#"')
     .replace(/(href|src)\s*=\s*'(?:\s*javascript:|\s*data:)[^']*'/gi, "$1='#'");
+  out = unwrapInvalidAnchors(out);
   return out;
+}
+
+/** Outlook-pasted email bodies wrap salutations / signatures / random
+ *  text in `<a>` tags pointing at fragment ids ("#_GoBack"), bookmarks,
+ *  empty hrefs, mailto: lists, etc. Without filtering, every "Dear All,"
+ *  shows up as a blue underlined link in the bubble — confusing and
+ *  visually noisy.
+ *
+ *  This pass parses the HTML, walks every anchor, and unwraps (replaces
+ *  with its child nodes) any anchor whose `href` isn't a real http(s)
+ *  URL. Real http(s) anchors keep their styling; everything else
+ *  becomes plain inline text. */
+function unwrapInvalidAnchors(html: string): string {
+  if (typeof DOMParser === "undefined" || !html.includes("<a")) return html;
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const root = doc.body.firstElementChild as HTMLElement | null;
+  if (!root) return html;
+  const anchors = Array.from(root.querySelectorAll("a"));
+  for (const a of anchors) {
+    const href = (a.getAttribute("href") || "").trim();
+    if (/^https?:\/\//i.test(href)) continue; // legit external URL — keep as link
+    // Replace the anchor with its children — the visible text is
+    // preserved, the link wrapper is gone.
+    const parent = a.parentNode;
+    if (!parent) continue;
+    while (a.firstChild) parent.insertBefore(a.firstChild, a);
+    parent.removeChild(a);
+  }
+  return root.innerHTML;
 }
 
 /**

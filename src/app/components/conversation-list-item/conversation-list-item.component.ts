@@ -4,10 +4,14 @@ import {
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { Conversation, CustomSection } from "../../models/types";
+import type { LiveConversation } from "../../services/adapters";
 import { BreakpointService } from "../../services/breakpoint.service";
 import { ChatStateService } from "../../services/chat-state.service";
+import { SectionDragService } from "../../services/section-drag.service";
 import { IconComponent } from "../icon/icon.component";
 import { AvatarComponent } from "../avatar/avatar.component";
+import { sectionAllowedForType } from "../../services/section-rules";
+import { NotoEmojiPipe, notoWebpFallback } from "../../services/noto-emoji.pipe";
 
 /**
  * Single row in the conversation list (HomeList second pane).
@@ -23,7 +27,7 @@ import { AvatarComponent } from "../avatar/avatar.component";
 @Component({
   selector: "app-conversation-list-item",
   standalone: true,
-  imports: [CommonModule, IconComponent, AvatarComponent],
+  imports: [CommonModule, IconComponent, AvatarComponent, NotoEmojiPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./conversation-list-item.component.html",
   styleUrl: "./conversation-list-item.component.css",
@@ -31,6 +35,61 @@ import { AvatarComponent } from "../avatar/avatar.component";
 export class ConversationListItemComponent implements OnChanges, OnDestroy {
   bp = inject(BreakpointService);
   readonly state = inject(ChatStateService);
+  private dragSvc = inject(SectionDragService);
+
+  /** Template-bound: see SidebarComponent for rationale — keeps a
+   *  missing WebP from showing a broken-image icon by swapping in
+   *  the PNG sibling. */
+  notoWebpFallback = notoWebpFallback;
+
+  /** Toggle pin on this conv via PUT /channels/:id/action (live mode)
+   *  or local-only flip (mock mode). Optimistic + rollback already
+   *  handled by chat-state. Closes the more-menu after firing so the
+   *  user sees the pinned indicator updated immediately. */
+  onTogglePin(): void {
+    if (this.state.live()) {
+      void this.state.togglePinConvLive(this.c.id);
+    } else {
+      this.state.togglePinConv(this.c.id);
+    }
+    this.menuOpen.set(false);
+  }
+
+  /** Toggle mute via PUT /channels/:id/action mute|unmute. Per-user
+   *  flag — silences notifications for the caller only. */
+  onToggleMute(): void {
+    if (this.state.live()) {
+      void this.state.muteConvLive(this.c.id, !this.c.muted);
+    } else {
+      // Mock mode: just flip locally — there's nothing to persist.
+      (this.c as any).muted = !this.c.muted;
+    }
+    this.menuOpen.set(false);
+  }
+
+  /** Mark every message in this conv as read. Backend bulk endpoint
+   *  resolves "latest message id" server-side so we don't have to. */
+  onMarkRead(): void {
+    if (this.state.live()) {
+      void this.state.markAllReadLive(this.c.id);
+    } else {
+      this.state.markConvRead(this.c.id);
+    }
+    this.menuOpen.set(false);
+  }
+
+  /** Hide conversation = archive for the caller. Per-user flag; the
+   *  conv disappears from the sidebar (home-list filters out
+   *  archived) but other members are unaffected. */
+  onHide(): void {
+    if (this.state.live()) {
+      void this.state.archiveConvLive(this.c.id, true);
+    } else {
+      // Mock mode local flip.
+      (this.c as any).archived = true;
+    }
+    this.menuOpen.set(false);
+  }
 
   @Input({ required: true }) c!: Conversation;
   @Input() isActive = false;
@@ -126,7 +185,12 @@ export class ConversationListItemComponent implements OnChanges, OnDestroy {
   }
 
   get rootClass(): string {
-    const base = "group";
+    // 5px gutter + 8px corner radius — gives the conversation list a
+    // card-stack feel rather than tightly-packed table rows. rounded-lg
+    // on both outer and inner so the hover-gray bg respects the corner
+    // radius without needing overflow-hidden (which would clip the
+    // optional unread badge that sits just outside the avatar).
+    const base = "group m-[5px] rounded-lg";
     const active = this.isActive ? "bg-blue-50/60" : "";
     const exp = this.expanded ? "bg-blue-50/40" : "";
     return `${base} ${active} ${exp}`;
@@ -170,6 +234,33 @@ export class ConversationListItemComponent implements OnChanges, OnDestroy {
     }
   }
 
+  /** Built-in destinations available in the Move-to-section menu.
+   *  Filtered by `allowedBuiltinTargets()` via the shared
+   *  `sectionAllowedForType` helper so cross-type moves don't appear
+   *  (DM can't go to Spaces, only AI channels go to AI, etc.).
+   *  Custom sections are always shown alongside in a separate block. */
+  private readonly ALL_BUILTIN_MOVE_TARGETS = [
+    { id: "direct",    label: "Direct messages",        icon: "message-square" },
+    { id: "spaces",    label: "Spaces",                 icon: "users" },
+    { id: "ai",        label: "Airlift Intelligence",   icon: "sparkles" },
+    { id: "customers", label: "Customer Conversations", icon: "users" },
+  ];
+
+  /** This conv's canonical channel type. Prefers the API type (live
+   *  mode); falls back to the legacy mock-data discriminator. */
+  get channelType(): string {
+    const apiType = (this.c as LiveConversation).api?.type;
+    return apiType || this.c.type || "";
+  }
+
+  /** Only the built-in destinations this conversation is allowed to
+   *  move into. A channel can only sit in its own type's built-in
+   *  or a custom section — cross-type moves are blocked. */
+  get allowedBuiltinTargets() {
+    const t = this.channelType;
+    return this.ALL_BUILTIN_MOVE_TARGETS.filter((b) => sectionAllowedForType(b.id, t));
+  }
+
   moveToSection(secId: string | null): void {
     this.moveSection.emit({ id: this.c.id, section: secId });
     this.menuOpen.set(false);
@@ -186,6 +277,28 @@ export class ConversationListItemComponent implements OnChanges, OnDestroy {
 
   isInCustomSection(): boolean {
     return this.customSections?.some((s) => s.id === this.c.section) ?? false;
+  }
+
+  /** True while this row is being dragged. Drives the opacity drop on
+   *  the source so the user sees what's flying. Cleared on dragend or
+   *  drop (the browser fires dragend in both cases). */
+  isDragging = signal(false);
+
+  /** HTML5 dragstart — publish this conv's id + type into the shared
+   *  drag service so the sidebar's drop handler can apply cross-type
+   *  rules. The dataTransfer payload is just a sentinel so we can
+   *  recognise our own drag if needed. */
+  onDragStart(e: DragEvent): void {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("application/x-airlift-conv", this.c.id);
+    this.dragSvc.start(this.c.id, this.channelType);
+    this.isDragging.set(true);
+  }
+
+  onDragEnd(_e: DragEvent): void {
+    this.dragSvc.end();
+    this.isDragging.set(false);
   }
 
   ngOnDestroy(): void {

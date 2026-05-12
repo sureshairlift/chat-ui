@@ -15,9 +15,11 @@ import {
 import { LiveDataService } from "./live-data.service";
 import { FcmListenerService } from "./fcm-listener.service";
 import { IdentityService } from "./identity.service";
-import type { LiveMessage } from "./adapters";
+import type { LiveMessage, LiveConversation } from "./adapters";
+import { adaptChannel } from "./adapters";
 import type { SendMessageBody } from "./api-client.service";
-import type { ChannelInfo } from "../models/api-types";
+import type { ChannelInfo, MessageInfoResponse, SectionCountsResponse } from "../models/api-types";
+import { newObjectIDHex } from "./object-id";
 
 /**
  * ChatStateService — single source of truth for the app's mutable state.
@@ -83,7 +85,11 @@ export class ChatStateService {
    *  their pre-existing order, then any custom sections appended on
    *  creation. The user can drag/up-down-arrow to reorder, and the new
    *  order persists across reloads via localStorage. */
-  private readonly DEFAULT_SECTION_ORDER = ["customers", "ai", "direct", "test", "spaces"];
+  // "test" used to live here as a built-in section — removed because
+  // it's a user-organisational concept, not a backend channel type.
+  // Anyone who wants a "Test" bucket creates it as a custom section
+  // and the per-channel section_id override does the rest.
+  private readonly DEFAULT_SECTION_ORDER = ["customers", "ai", "direct", "spaces"];
   private readonly SECTION_ORDER_KEY = "airlift-chat:section-order";
   readonly sectionOrder = signal<string[]>(this.loadSectionOrder());
 
@@ -122,6 +128,22 @@ export class ChatStateService {
   readonly showPinned = signal(false);
   readonly showSharedMedia = signal(false);
   readonly showStatusEditor = signal(false);
+  /** Currently-open Message Info side panel — null when closed.
+   *  Holds the target message id; the panel component fetches the
+   *  hydrated payload via state.loadMessageInfoLive(). */
+  readonly messageInfoFor = signal<string | null>(null);
+  /** Server-aggregated section badge counts (direct/spaces/ai/
+   *  customers/total). Null until the first /me/section-counts call
+   *  resolves — the sidebar falls back to its locally-derived counts
+   *  while waiting. */
+  readonly sectionCounts = signal<SectionCountsResponse | null>(null);
+
+  /** Cached message-info payloads keyed by message id. The panel
+   *  reads this signal directly; loadMessageInfoLive fills it. A
+   *  `loading: true` placeholder is dropped in while the fetch is
+   *  in flight so the panel can render a spinner without firing a
+   *  duplicate request. */
+  readonly messageInfoCache = signal<Record<string, { data: MessageInfoResponse | null; loading?: boolean }>>({});
 
   /** Currently-expanded message (for the fullscreen viewer overlay).
    *  null when nothing is open. The bubble's more menu sets this via
@@ -140,10 +162,17 @@ export class ChatStateService {
    *  constructor wires an effect that writes back on every change. */
   private readonly SIDEBAR_WIDTH_KEY = "airlift-chat:sidebar-width";
   private readonly THREAD_WIDTH_KEY = "airlift-chat:thread-width";
+  private readonly PANEL_WIDTH_KEY = "airlift-chat:panel-width";
   readonly sidebarWidth = signal(this.loadWidth(this.SIDEBAR_WIDTH_KEY, 320, 280, 620));
   readonly threadWidth = signal(this.loadWidth(this.THREAD_WIDTH_KEY, 420, 320, 640));
+  /** Shared width for every non-thread dock panel (Board, Tasks,
+   *  Pinned, Shared media, Following, Message info). They're mutually
+   *  exclusive — only one is mounted at a time — so a single signal
+   *  keeps user preference consistent across the lot. */
+  readonly panelWidth = signal(this.loadWidth(this.PANEL_WIDTH_KEY, 380, 320, 720));
   readonly threadResizing = signal(false);
   readonly sidebarResizing = signal(false);
+  readonly panelResizing = signal(false);
 
   /** Read a width from localStorage and clamp to the resize range. Falls
    *  back to the provided default if the storage value is missing or junk. */
@@ -375,6 +404,12 @@ export class ChatStateService {
         localStorage.setItem(this.THREAD_WIDTH_KEY, String(w));
       }
     });
+    effect(() => {
+      const w = this.panelWidth();
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem(this.PANEL_WIDTH_KEY, String(w));
+      }
+    });
 
     // Persist sidebar section order. Updates whenever the user drags or
     // taps the up/down arrows in rearrange mode, or when a new custom
@@ -461,6 +496,36 @@ export class ChatStateService {
    *  stream completes (done flag flips). */
   readonly streamingByConv = signal<Record<string, LiveMessage[] | undefined>>({});
 
+  /** True when the active conv is an AI chat (legacy isAI flag or
+   *  ai_direct / ai_assisted type). The conversation pane uses this
+   *  to enable a Claude-style layout (centered column, no gradient
+   *  cards, no avatar column, no day separators). */
+  readonly activeConvIsAI = computed<boolean>(() => {
+    const id = this.activeConv();
+    if (!id) return false;
+    const c = this.conversations().find((x) => x.id === id);
+    return !!c?.isAI;
+  });
+
+  /** "Thinking…" status phrases per conv — the rotating subtitle the
+   *  AI spinner cycles through while a reply is being composed. Filled
+   *  in parallel with the SSE stream on each sendMessageLive(); cleared
+   *  when the stream ends. */
+  readonly thinkingWordsByConv = signal<Record<string, string[] | undefined>>({});
+  /** True while the thinking-words RPC is in flight per conv. */
+  readonly thinkingWordsLoading = signal<Record<string, boolean>>({});
+
+  /** Live auto-title state per conv. While the SSE is streaming, the
+   *  conversation header reads from `streamed` so the title "types
+   *  itself out" character by character. Once the stream completes
+   *  the channel doc is updated server-side and the local
+   *  conversation's `name` is patched, at which point the streamed
+   *  text is no longer rendered. */
+  readonly autoTitleByConv = signal<Record<string, { streamed: string; done: boolean } | undefined>>({});
+  /** Set of conv ids we've already kicked off an auto-title for — so
+   *  the effect doesn't re-trigger on every signal change. */
+  private autoTitleTriggered = new Set<string>();
+
   /** Cached ChannelInfo per channel id. Populated by `loadChannelInfo`
    *  on conversation switch (called from setActiveConv when live). The
    *  conversation header reads from here so it doesn't fire its own
@@ -498,8 +563,13 @@ export class ChatStateService {
       return true;
     }
     this.conversations.set(convs);
-    // Pick the most-recent channel as the active conv if none is set.
-    if (!this.activeConv()) {
+    // Pick the most-recent channel as the active conv if none is set
+    // AND the user isn't already on a specific section. Without the
+    // section check, refreshing on /section/custom/<id> would land
+    // on that section, then connect() would overwrite activeConv to
+    // the latest conv and the state→URL effect would rewrite the URL
+    // to /c/<convId> — losing the user's location.
+    if (!this.activeConv() && this.selectedSection() === "all") {
       this.activeConv.set(convs[0]?.id ?? null);
     }
     // Load messages for the active conv only — others load lazily on switch.
@@ -571,19 +641,30 @@ export class ChatStateService {
     if (!this.liveData) return;
     this.dashboardLoading.set(true);
     try {
-      const [handoffs, unread, total, starred] = await Promise.all([
+      const [handoffs, unread, total, starred, sectionCounts] = await Promise.all([
         this.liveData.loadHandoffs({ status: ['pending', 'claimed', 'resolved'] }),
         this.liveData.loadUnreadByChannel(),
         this.liveData.loadTotalUnread(),
         this.liveData.loadStarred(),
+        this.liveData.loadSectionCounts(),
       ]);
       this.liveHandoffs.set(handoffs);
       this.liveUnreadByChannel.set(unread);
       this.liveTotalUnread.set(total);
       this.liveSavedCount.set(starred.length);
+      if (sectionCounts) this.sectionCounts.set(sectionCounts);
     } finally {
       this.dashboardLoading.set(false);
     }
+  }
+
+  /** Force-refresh the cached section counts. Wired by the FCM
+   *  subscriber so a channel.created / channel.deleted / membership
+   *  change immediately re-fetches the totals. */
+  async refreshSectionCounts(): Promise<void> {
+    if (!this.liveData) return;
+    const next = await this.liveData.loadSectionCounts();
+    if (next) this.sectionCounts.set(next);
   }
 
   /** Subscribe to FCM payloads and refresh affected channels. Idempotent
@@ -614,6 +695,18 @@ export class ChatStateService {
       // a fresh snapshot in the background so KPIs stay live.
       if (payload.event === 'phase.changed' || payload.event === 'channel.updated' || payload.event === 'message.created') {
         void this.loadDashboardLive();
+      }
+      // Any event that can shift channel membership (member added,
+      // removed, channel created or deleted) invalidates the sidebar
+      // section counts — refresh them so the badges stay accurate.
+      if (
+        payload.event === 'channel.created' ||
+        payload.event === 'channel.deleted' ||
+        payload.event === 'channel.updated' ||
+        payload.event === 'channel_member.added' ||
+        payload.event === 'channel_member.removed'
+      ) {
+        void this.refreshSectionCounts();
       }
       void this.refreshConv(payload.channel_id);
       // phase.changed / channel.updated payloads also invalidate the
@@ -697,6 +790,26 @@ export class ChatStateService {
           text: '',
         } as unknown as LiveMessage],
       }));
+      // Fetch context-aware "Thinking…" phrases in parallel. They feed
+      // the spinner's rotating subtitle and are decorative — short
+      // local-LLM call. Question = the prompt the user just sent
+      // (strip any inline HTML so the LLM gets plain text).
+      const question = (body.content || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      this.thinkingWordsLoading.update((m) => ({ ...m, [convId]: true }));
+      void this.liveData
+        .loadAIThinkingWords(convId, question)
+        .then((words) => {
+          if (words && words.length > 0) {
+            this.thinkingWordsByConv.update((m) => ({ ...m, [convId]: words }));
+          }
+        })
+        .finally(() => {
+          this.thinkingWordsLoading.update((m) => {
+            const next = { ...m };
+            delete next[convId];
+            return next;
+          });
+        });
       // Poll the accumulator on a 100ms tick. Could be replaced with a
       // proper subject; the adapter cost stays low this way.
       const tick = setInterval(() => {
@@ -740,6 +853,17 @@ export class ChatStateService {
             }));
           }
           this.streamingByConv.update((s) => ({ ...s, [convId]: undefined }));
+          // Clear cached thinking words — next send will fetch fresh
+          // ones for the new prompt.
+          this.thinkingWordsByConv.update((m) => {
+            const next = { ...m };
+            delete next[convId];
+            return next;
+          });
+          // After the FIRST successful AI exchange, kick off the
+          // auto-title SSE so the conv header morphs from "New
+          // chat" / "Airlift Intelligence" to something meaningful.
+          this.maybeStreamAutoTitle(convId);
           return;
         }
         // In-flight: push current accumulator state so deltas re-render.
@@ -817,9 +941,17 @@ export class ChatStateService {
     if (!this.liveData) return;
     const ok = await this.liveData.deleteMessage(messageID);
     if (!ok) return;
+    // Soft delete — keep the row in place and flip `deleted: true`
+    // so the bubble swaps its body for the "Message deleted by its
+    // author" tombstone. Strip text/html/attachments so any stale
+    // reference doesn't bleed through, and clear the pinned-bubble
+    // flag since deleting also unpins (the backend mirrors this).
     this.messagesByConv.update((map) => {
       const cur = map[convId] ?? [];
-      return { ...map, [convId]: cur.filter((m) => m.id !== messageID) };
+      const next = cur.map((m) => (m.id === messageID
+        ? { ...m, deleted: true, text: "", html: undefined, attachments: undefined, pinned: false }
+        : m));
+      return { ...map, [convId]: next };
     });
   }
 
@@ -838,12 +970,23 @@ export class ChatStateService {
     }
   }
 
-  /** Hydrate the pinnedMsgs map for a channel from the backend. Called
-   *  by the PinnedPanel when it opens (and on conversation switch). */
+  /** Cached full pinned-message bodies per channel — populated by
+   *  loadPinnedLive from the dedicated `GET /channels/:id/pinned`
+   *  endpoint. Lets the Board panel render pinned messages even
+   *  when they fall outside the currently-loaded scroll window
+   *  (which is the common case for older pins). */
+  readonly pinnedMessagesByConv = signal<Record<string, LiveMessage[]>>({});
+
+  /** Hydrate the pinned set for a channel from the backend. Stores
+   *  BOTH the id list (for fast O(1) `isPinned` lookup on bubbles)
+   *  AND the full message bodies (for the Board panel to render
+   *  pinned messages from any point in the channel's history,
+   *  not just the loaded window). */
   async loadPinnedLive(convId: string): Promise<void> {
     if (!this.liveData) return;
     const pinned = await this.liveData.loadPinned(convId);
     this.pinnedMsgs.update((map) => ({ ...map, [convId]: pinned.map((m) => m.id) }));
+    this.pinnedMessagesByConv.update((map) => ({ ...map, [convId]: pinned }));
   }
 
   /** Toggle a per-user channel flag (pin/star/mute/archive) through the
@@ -885,16 +1028,39 @@ export class ChatStateService {
   }
 
   /** Archive (or unarchive) a conversation for the caller. Returns
-   *  true on success. Per-user flag — other members unaffected. */
+   *  true on success. Per-user flag — other members unaffected.
+   *  Optimistically flips local state so the conv disappears from
+   *  the sidebar immediately (home-list baseConvs filters out
+   *  archived rows); rolls back on backend failure. */
   async archiveConvLive(convId: string, archive = true): Promise<boolean> {
     if (!this.liveData) return false;
-    return await this.liveData.applyChannelAction(convId, archive ? 'archive' : 'unarchive');
+    this.patchConvFlag(convId, { archived: archive });
+    const ok = await this.liveData.applyChannelAction(convId, archive ? 'archive' : 'unarchive');
+    if (!ok) this.patchConvFlag(convId, { archived: !archive });
+    return ok;
   }
 
-  /** Mute (or unmute) a conversation for the caller. */
+  /** Mute (or unmute) a conversation for the caller. Optimistic
+   *  flip + rollback so the bell icon next to the conv updates
+   *  without a round-trip. */
   async muteConvLive(convId: string, mute = true): Promise<boolean> {
     if (!this.liveData) return false;
-    return await this.liveData.applyChannelAction(convId, mute ? 'mute' : 'unmute');
+    this.patchConvFlag(convId, { muted: mute });
+    const ok = await this.liveData.applyChannelAction(convId, mute ? 'mute' : 'unmute');
+    if (!ok) this.patchConvFlag(convId, { muted: !mute });
+    return ok;
+  }
+
+  /** Internal helper: patch any combination of per-user flag fields
+   *  on a single conversation. Used by archive / mute / pin paths to
+   *  keep the optimistic-flip code in one spot. */
+  private patchConvFlag(
+    convId: string,
+    patch: Partial<Pick<Conversation, "muted" | "archived" | "pinned" | "unread">>,
+  ): void {
+    this.conversations.update((list) =>
+      list.map((c) => (c.id === convId ? { ...c, ...patch } : c)),
+    );
   }
 
   /** Per-conv AI summary cache. On-demand only — the banner inside
@@ -940,6 +1106,25 @@ export class ChatStateService {
       [convId]: { summary: res.summary, messageCount: res.message_count, loadedAt: Date.now() },
     }));
     return { summary: res.summary, messageCount: res.message_count };
+  }
+
+  /** Fetch the rich Message Info payload (viewed/not-viewed split +
+   *  reactions with reactor names) and cache by message id. Idempotent
+   *  — returns the cached entry on re-call. */
+  async loadMessageInfoLive(msgId: string): Promise<MessageInfoResponse | null> {
+    if (!this.liveData) return null;
+    const cached = this.messageInfoCache()[msgId];
+    if (cached?.data && !cached.loading) return cached.data;
+    this.messageInfoCache.update((m) => ({
+      ...m,
+      [msgId]: { data: cached?.data ?? null, loading: true },
+    }));
+    const res = await this.liveData.loadMessageInfo(msgId);
+    this.messageInfoCache.update((m) => ({
+      ...m,
+      [msgId]: { data: res, loading: false },
+    }));
+    return res;
   }
 
   /** Drop the cached AI summary for a conv. Called from the FCM
@@ -1047,6 +1232,81 @@ export class ChatStateService {
     return ok;
   }
 
+  /** Owner-only: tear down a conversation. Optimistically removes it
+   *  from the sidebar AND fires the backend delete; rolls back on
+   *  failure (keeping the conv visible) so the user sees the actual
+   *  state if they hit a 403. */
+  async deleteConvLive(convId: string): Promise<boolean> {
+    if (!this.liveData) return false;
+    const snapshot = this.conversations();
+    // Optimistic — drop it from the sidebar so the click feels instant.
+    this.conversations.update((list) => list.filter((c) => c.id !== convId));
+    if (this.activeConv() === convId) this.setActiveConv(null);
+    const ok = await this.liveData.deleteChannel(convId);
+    if (!ok) {
+      // Rollback — restore the conv exactly where it was.
+      this.conversations.set(snapshot);
+    }
+    return ok;
+  }
+
+  /** Owner/admin-only: edit channel metadata. On success, replaces the
+   *  cached conversation with the freshly-adapted one so the header
+   *  picks up the new name/description without a list refetch. */
+  async updateConvLive(
+    convId: string,
+    patch: { name?: string; description?: string; icon?: string; is_private?: boolean },
+  ): Promise<boolean> {
+    if (!this.liveData) return false;
+    const me = this.identity.userRef() ?? '';
+    const updated = await this.liveData.updateChannel(convId, patch);
+    if (!updated) return false;
+    // Adapt the wire shape into the legacy Conversation and patch the
+    // sidebar in place. adaptChannel is the same routine the initial
+    // load uses, so the row stays consistent.
+    const adapted = adaptChannel(updated, me);
+    this.conversations.update((list) =>
+      list.map((c) => (c.id === convId ? { ...adapted } : c)),
+    );
+    return true;
+  }
+
+  /** Bulk mark every message in a conversation as read. Uses the
+   *  server's bulk endpoint (single round-trip; the server resolves
+   *  the latest message id). Optimistically clears local unread
+   *  state so the badge disappears immediately. */
+  async markAllReadLive(convId: string): Promise<boolean> {
+    this.markConvRead(convId); // optimistic — clears local unread badge
+    if (!this.liveData) return true;
+    // AI chats skip the network round-trip — see isAIConv.
+    if (this.isAIConv(convId)) return true;
+    return await this.liveData.markAllRead(convId);
+  }
+
+  /** Owner/admin: remove another member from a channel. Refreshes the
+   *  members list on success so the conversation header member roster
+   *  reflects the change. The current-user "leave" path is on
+   *  leaveConvLive — this variant is for kicking someone else. */
+  async removeMemberLive(convId: string, userRef: string): Promise<boolean> {
+    if (!this.liveData) return false;
+    const ok = await this.liveData.removeMember(convId, userRef);
+    if (ok) {
+      // Refresh member list for the active conv if applicable so the
+      // header's member pile updates without a full info refetch.
+      const info = this.channelInfoByConv()[convId];
+      if (info) {
+        this.channelInfoByConv.update((m) => ({
+          ...m,
+          [convId]: {
+            ...info,
+            members: (info.members ?? []).filter((mem) => mem.user_ref !== userRef),
+          },
+        }));
+      }
+    }
+    return ok;
+  }
+
   /** Toggle a reaction through the backend AND optimistically update
    *  the local map. */
   async toggleReactionLive(messageID: string, emoji: string): Promise<void> {
@@ -1069,25 +1329,43 @@ export class ChatStateService {
     });
   }
 
+  /** True when the given conv is an AI chat (`ai_direct` / `ai_assisted`
+   *  or the legacy `isAI` flag from mock data). AI chats short-circuit
+   *  the read-receipt API calls — the user IS the only human reader,
+   *  the AI doesn't track read state, and the POST adds latency for
+   *  zero functional value. Local unread bookkeeping (the badge,
+   *  unreadStartMsgId) still runs so the UI stays consistent. */
+  private isAIConv(id: string): boolean {
+    const c = this.conversations().find((x) => x.id === id);
+    if (!c) return false;
+    if (c.isAI) return true;
+    const api = (c as LiveConversation).api;
+    return api?.type === "ai_direct" || api?.type === "ai_assisted";
+  }
+
   /** Mark a specific conversation as read up to its latest message.
    *  Optimistically clears the local unread badge AND fires
    *  POST /channels/:id/read so other devices stay in sync. The
    *  per-conv form (vs markActiveConvReadLive below) is what the
-   *  AI catch-up banner uses since it knows which conv it represents. */
+   *  AI catch-up banner uses since it knows which conv it represents.
+   *  Skips the API call for AI convs — see `isAIConv`. */
   async markConvReadLive(convId: string): Promise<void> {
     this.markConvRead(convId); // optimistic — clears badge + unreadStartMsgId
     if (!this.live() || !this.liveData) return;
+    if (this.isAIConv(convId)) return;
     const msgs = this.messagesByConv()[convId];
     const last = msgs?.[msgs.length - 1];
     if (!last) return;
     await this.liveData.markRead(convId, last.id);
   }
 
-  /** Mark the active conversation as read up to the latest message. */
+  /** Mark the active conversation as read up to the latest message.
+   *  Skips the API call for AI convs — see `isAIConv`. */
   async markActiveConvReadLive(): Promise<void> {
     if (!this.liveData) return;
     const id = this.activeConv();
     if (!id) return;
+    if (this.isAIConv(id)) return;
     const msgs = this.messagesByConv()[id];
     const last = msgs?.[msgs.length - 1];
     if (!last) return;
@@ -1189,6 +1467,7 @@ export class ChatStateService {
     this.showTasks.set(false);
     this.showPinned.set(false);
     this.showSharedMedia.set(false);
+    this.messageInfoFor.set(null);
   }
 
   setUserRole(r: UserRole): void { this.userRole.set(r); }
@@ -1214,19 +1493,283 @@ export class ChatStateService {
   }
 
   moveConvSection(id: string, section: SectionId): void {
+    // Optimistic update — the user sees the row jump immediately.
+    // Snapshot the previous section so we can roll back if the
+    // backend write fails (e.g. network drop, 403 because they
+    // aren't a member anymore).
+    let prev: SectionId | undefined;
     this.conversations.update((list) =>
-      list.map((c) => (c.id === id ? { ...c, section } : c))
+      list.map((c) => {
+        if (c.id !== id) return c;
+        prev = c.section;
+        // Patch BOTH the legacy `section` field (which the home-list
+        // filter reads) AND the underlying `api.my_section_id` (which
+        // the adapter re-derives from when anything re-runs through
+        // adaptChannel). Without the second patch, any code path that
+        // touches the api shape after the move — e.g. a downstream
+        // re-adapt — would surface the stale section and the row
+        // would visually "snap back" until the next full reload.
+        const liveC = c as LiveConversation;
+        const nextC: LiveConversation = {
+          ...liveC,
+          section,
+          api: liveC.api ? { ...liveC.api, my_section_id: section || undefined } : liveC.api,
+        };
+        return nextC as unknown as Conversation;
+      }),
     );
+    // Also patch the sidebar's badge counts optimistically — they
+    // come from /me/section-counts (server-authoritative totals,
+    // can exceed the loaded conversations list), so just updating
+    // `conversations` isn't enough to bump the numeric badge next
+    // to each section row.
+    if (prev !== undefined && prev !== section) {
+      this.patchSectionCount(prev, -1);
+      this.patchSectionCount(section, +1);
+    }
+    // Invalidate the cached ChannelInfo so the conversation header
+    // (member pile, phase pill, etc.) re-fetches with the new
+    // section context if/when the user opens the conv next.
+    if (this.channelInfoByConv()[id]) {
+      this.channelInfoByConv.update((m) => {
+        const next = { ...m };
+        delete next[id];
+        return next;
+      });
+    }
+    // Mock / offline path stops here — nothing to persist.
+    if (!this.live() || !this.liveData) return;
+    // The backend stores the section override on channel_members.
+    // Empty string + "direct" / "spaces" / "ai" / "customers"
+    // (the built-ins) are written as-is so the same id round-trips
+    // verbatim. "direct" as an explicit override pins the conv to
+    // the Direct messages bucket even if the channel's type would
+    // have placed it elsewhere — Google-Chat parity.
+    void this.liveData.setChannelSection(id, section || null).then((ok) => {
+      if (ok || prev === undefined) return;
+      // Rollback to the snapshot — keeps local state aligned with
+      // the server when the request failed. Restore both `section`
+      // and `api.my_section_id` so the row reads consistent.
+      const prevSec = prev;
+      this.conversations.update((list) =>
+        list.map((c) => {
+          if (c.id !== id) return c;
+          const liveC = c as LiveConversation;
+          const nextC: LiveConversation = {
+            ...liveC,
+            section: prevSec!,
+            api: liveC.api ? { ...liveC.api, my_section_id: prevSec || undefined } : liveC.api,
+          };
+          return nextC as unknown as Conversation;
+        }),
+      );
+      if (prev !== section) {
+        this.patchSectionCount(section, -1);
+        this.patchSectionCount(prev, +1);
+      }
+    });
   }
 
-  addCustomSection(label: string): void {
-    const id = `custom-${Date.now()}`;
+  /** Apply ±delta to the section-counts badge for one section id.
+   *  Built-in ids land on the named fields; everything else lands in
+   *  the `custom` map. Floors at 0 so a momentary drift can't make
+   *  the badge go negative. */
+  private patchSectionCount(sectionId: string, delta: number): void {
+    if (!sectionId) return;
+    this.sectionCounts.update((s) => {
+      if (!s) return s;
+      const next: SectionCountsResponse = { ...s, custom: { ...(s.custom ?? {}) } };
+      switch (sectionId) {
+        case "direct":    next.direct    = Math.max(0, next.direct + delta); break;
+        case "spaces":    next.spaces    = Math.max(0, next.spaces + delta); break;
+        case "ai":        next.ai        = Math.max(0, next.ai + delta); break;
+        case "customers": next.customers = Math.max(0, next.customers + delta); break;
+        default: {
+          const cur = next.custom![sectionId] ?? 0;
+          const nv = Math.max(0, cur + delta);
+          if (nv === 0) delete next.custom![sectionId];
+          else next.custom![sectionId] = nv;
+        }
+      }
+      return next;
+    });
+  }
+
+  /** Count of conversations currently in a given section. Used by
+   *  the section-delete confirm modal to show "N conversations will
+   *  move back to default". Reads the in-memory list — for an
+   *  authoritative count the caller could hit /me/section-counts,
+   *  but the local count is consistent with what the user can
+   *  actually see in the sidebar, which is what they care about. */
+  countConvsInSection(sectionId: string): number {
+    return this.conversations().filter((c) => c.section === sectionId).length;
+  }
+
+  /** Remove a custom section. Demotes every conv in it back to its
+   *  type-default via DELETE /me/sections/:id, then drops the
+   *  section from local state + persists the updated preferences.
+   *  Returns the demoted count for the toast. Caller is responsible
+   *  for showing the confirm modal first. */
+  /** Kick off the streaming auto-title for a conv if it qualifies —
+   *  AI channel, no user-set title yet, and we haven't already
+   *  triggered for this conv this session. Idempotent.
+   *
+   *  "Generic" name check is loose: anything that LOOKS like a
+   *  default placeholder qualifies. Helps catch variant names like
+   *  "AI" / "Untitled" / "Chat with Airlift". The backend's own
+   *  `maybe_auto_title` does the same dance server-side. */
+  private maybeStreamAutoTitle(convId: string): void {
+    if (!this.liveData) {
+      console.warn("[auto-title] skipped: liveData unavailable", { convId });
+      return;
+    }
+    if (this.autoTitleTriggered.has(convId)) {
+      console.debug("[auto-title] skipped: already triggered", { convId });
+      return;
+    }
+    const conv = this.conversations().find((c) => c.id === convId);
+    if (!conv) {
+      console.warn("[auto-title] skipped: conv not in local list", { convId });
+      return;
+    }
+    if (!conv.isAI) {
+      console.debug("[auto-title] skipped: not an AI conv", { convId, name: conv.name });
+      return;
+    }
+    const name = (conv.name || "").trim().toLowerCase();
+    const generic =
+      name === "" ||
+      name === "ai" ||
+      name === "untitled" ||
+      name.startsWith("new chat") ||
+      name.startsWith("new ai chat") ||
+      name === "airlift intelligence" ||
+      name.startsWith("chat with airlift") ||
+      name.startsWith("untitled chat");
+    if (!generic) {
+      console.debug("[auto-title] skipped: name is not generic", { convId, name });
+      return;
+    }
+    console.info("[auto-title] starting stream", { convId, name });
+    this.autoTitleTriggered.add(convId);
+    this.autoTitleByConv.update((m) => ({ ...m, [convId]: { streamed: "", done: false } }));
+    this.liveData.streamAutoTitle(convId, {
+      onDelta: (text) => {
+        this.autoTitleByConv.update((m) => {
+          const cur = m[convId] || { streamed: "", done: false };
+          return { ...m, [convId]: { streamed: cur.streamed + text, done: false } };
+        });
+      },
+      onEnd: (title) => {
+        console.info("[auto-title] end", { convId, title });
+        if (title && title.trim()) {
+          const finalTitle = title.trim();
+          this.conversations.update((list) =>
+            list.map((c) => (c.id === convId ? { ...c, name: finalTitle } : c)),
+          );
+          this.autoTitleByConv.update((m) => ({ ...m, [convId]: { streamed: finalTitle, done: true } }));
+          setTimeout(() => {
+            this.autoTitleByConv.update((m) => {
+              const next = { ...m };
+              delete next[convId];
+              return next;
+            });
+          }, 800);
+        } else {
+          this.autoTitleByConv.update((m) => {
+            const next = { ...m };
+            delete next[convId];
+            return next;
+          });
+        }
+      },
+      onError: (msg) => {
+        // Surface the failure to the console so silent SSE / network
+        // failures aren't invisible. Allow retry on the next
+        // ai.message.end.
+        console.warn("[auto-title] error", { convId, msg });
+        this.autoTitleByConv.update((m) => {
+          const next = { ...m };
+          delete next[convId];
+          return next;
+        });
+        this.autoTitleTriggered.delete(convId);
+      },
+    });
+  }
+
+  /** Start a fresh 1:1 AI chat for the caller. Creates the channel
+   *  via chat-service, prepends it to the local conversations list,
+   *  and switches the active conv to it so the composer is ready
+   *  for the first prompt. Returns the new conv id on success, null
+   *  on failure (UI can toast). */
+  async startNewAIChatLive(): Promise<string | null> {
+    if (!this.liveData) return null;
+    const conv = await this.liveData.createAIChat();
+    if (!conv) return null;
+    // Prepend so the new chat sits at the top of the AI section's
+    // "Recent sessions" list. Section + counts are derived from the
+    // adapted Channel, so no separate bucket math needed.
+    this.conversations.update((list) => [conv, ...list]);
+    this.patchSectionCount("ai", +1);
+    // Route the user into the new conv. setActiveConvLive also kicks
+    // off the lazy messages + channel-info loads, though there's
+    // nothing to load yet — the empty bubble list is the welcome
+    // screen for a fresh AI chat.
+    await this.setActiveConvLive(conv.id);
+    return conv.id;
+  }
+
+  async removeCustomSection(id: string): Promise<number> {
+    let demoted = 0;
+    if (this.live() && this.liveData) {
+      // Backend: clear section_id on every channel_member row that
+      // referenced this section. Failure shouldn't block the local
+      // removal — the section is gone from the user's view either
+      // way; worst case the next page load surfaces a stale section
+      // override that falls back to the type default anyway.
+      demoted = await this.liveData.deleteSection(id);
+    } else {
+      // Mock / offline mode — flip section back to "direct" locally.
+      this.conversations.update((list) =>
+        list.map((c) => {
+          if (c.section !== id) return c;
+          demoted++;
+          return { ...c, section: "direct" };
+        }),
+      );
+    }
+    // Drop the section + remove from the persisted order. The
+    // adapter on next channels-list refresh will resolve each conv
+    // to its type-default since section_id was cleared upstream.
+    this.customSections.update((list) => list.filter((s) => s.id !== id));
+    this.sectionOrder.update((order) => order.filter((sec) => sec !== id));
+    // Also drop any local conv whose section still points at the
+    // removed id — keeps the UI consistent during the window
+    // between deleteSection completing and the next conversations
+    // refresh.
+    this.conversations.update((list) =>
+      list.map((c) => (c.section === id ? { ...c, section: "direct" } : c)),
+    );
+    void this.savePrefsLive();
+    return demoted;
+  }
+
+  addCustomSection(label: string, emoji?: string): void {
+    // Mongo ObjectID hex — same shape as channel/message IDs so the
+    // URL mapper can pass it through unchanged (no FNV hash) and the
+    // doc shape stays consistent with the rest of the app.
+    const id = newObjectIDHex();
     const palette = [
       "bg-pink-500", "bg-violet-500", "bg-cyan-500", "bg-indigo-500",
       "bg-emerald-500", "bg-orange-500", "bg-blue-500",
     ];
     const color = palette[this.customSections().length % palette.length];
-    this.customSections.update((list) => [...list, { id, label, color }]);
+    const cleanEmoji = (emoji ?? "").trim() || undefined;
+    this.customSections.update((list) => [
+      ...list,
+      { id, label, color, emoji: cleanEmoji },
+    ]);
     // Append to the persisted order so the new section shows up at the
     // bottom of the sidebar list rather than wherever the default order
     // would place it.
@@ -1234,6 +1777,30 @@ export class ChatStateService {
       order.includes(id) ? order : [...order, id]
     );
     void this.savePrefsLive();
+  }
+
+  /** Patch label/emoji on an existing custom section. Built-in section
+   *  ids are ignored (they aren't user-editable). Persists in the same
+   *  user_preferences round-trip the add/delete flows use. */
+  updateCustomSection(id: string, patch: { label?: string; emoji?: string | null }): void {
+    let changed = false;
+    this.customSections.update((list) =>
+      list.map((s) => {
+        if (s.id !== id) return s;
+        const next: CustomSection = { ...s };
+        if (patch.label !== undefined) {
+          const lbl = patch.label.trim();
+          if (lbl && lbl !== s.label) { next.label = lbl; changed = true; }
+        }
+        if (patch.emoji !== undefined) {
+          const e = (patch.emoji ?? "").toString().trim();
+          const finalEmoji = e || undefined;
+          if (finalEmoji !== s.emoji) { next.emoji = finalEmoji; changed = true; }
+        }
+        return next;
+      }),
+    );
+    if (changed) void this.savePrefsLive();
   }
 
   /** Reorder a section by moving it from `from` to `to` (both indices into
@@ -1280,7 +1847,44 @@ export class ChatStateService {
         id: s.id,
         label: s.label,
         color: s.color ?? "bg-blue-500",
+        emoji: s.emoji || undefined,
       })));
+    }
+    // Drop stale ids from section_order that don't resolve to a
+    // built-in or to one of the custom sections we just loaded.
+    // Mirrors the cleanup the migration applies server-side; covers
+    // accounts the migration hasn't touched yet.
+    this.pruneStaleSectionOrder();
+  }
+
+  /** Reorder by section id rather than by sectionOrder index. The
+   *  sidebar's row indices can diverge from sectionOrder indices when
+   *  the persisted order contains phantom ids (e.g. a legacy "test"
+   *  entry with no matching custom_sections row — silently skipped at
+   *  render time). Resolving by id keeps the persisted order in sync
+   *  with what the user actually dragged. */
+  moveSectionByIds(fromId: string, toId: string): void {
+    const order = this.sectionOrder();
+    const from = order.indexOf(fromId);
+    const to = order.indexOf(toId);
+    if (from < 0 || to < 0 || from === to) return;
+    this.moveSection(from, to);
+  }
+
+  /** Drop ids from sectionOrder that don't correspond to a built-in
+   *  section or a known custom section. Legacy values like "test"
+   *  (the old built-in that was removed) survive in user_preferences
+   *  on existing accounts and silently inflate the array, breaking
+   *  index-based reorder math. Called after loadPreferencesLive so
+   *  the canonical server payload gets cleaned up too. */
+  private pruneStaleSectionOrder(): void {
+    const builtIns = new Set(["customers", "ai", "direct", "spaces"]);
+    const customIds = new Set(this.customSections().map((s) => s.id));
+    const before = this.sectionOrder();
+    const cleaned = before.filter((id) => builtIns.has(id) || customIds.has(id));
+    if (cleaned.length !== before.length) {
+      this.sectionOrder.set(cleaned);
+      void this.savePrefsLive();
     }
   }
 
@@ -1334,9 +1938,13 @@ export class ChatStateService {
   }
 
   deleteMessage(convId: string, msgId: string): void {
+    // Mock/offline path — same soft-delete semantics as deleteMessageLive
+    // above so the bubble tombstones in place instead of disappearing.
     this.messagesByConv.update((map) => ({
       ...map,
-      [convId]: (map[convId] ?? []).filter((m) => m.id !== msgId),
+      [convId]: (map[convId] ?? []).map((m) => (m.id === msgId
+        ? { ...m, deleted: true, text: "", html: undefined, attachments: undefined, pinned: false }
+        : m)),
     }));
   }
 
@@ -1375,13 +1983,17 @@ export class ChatStateService {
     const msgs = this.messagesByConv()[convId] ?? [];
     const ownIds = new Set(msgs.filter((m) => this.isOwnMessage(m) && ids.has(m.id)).map((m) => m.id));
     if (ownIds.size === 0) { this.clearSelection(); return 0; }
-    // Optimistic local removal so the UI feels snappy.
+    // Optimistic soft-delete — flip `deleted: true` on each row so
+    // the bubble swaps to the tombstone immediately instead of
+    // disappearing (then re-appearing after a refresh).
     this.messagesByConv.update((map) => ({
       ...map,
-      [convId]: (map[convId] ?? []).filter((m) => !ownIds.has(m.id)),
+      [convId]: (map[convId] ?? []).map((m) => (ownIds.has(m.id)
+        ? { ...m, deleted: true, text: "", html: undefined, attachments: undefined, pinned: false }
+        : m)),
     }));
     // Live mode: fire DELETE /messages/:id for each id in parallel.
-    // Quiet on per-message failure — the optimistic removal stays.
+    // Quiet on per-message failure — the optimistic flip stays.
     if (this.live() && this.liveData) {
       for (const id of ownIds) {
         void this.liveData.deleteMessage(id);
@@ -1645,6 +2257,9 @@ export class ChatStateService {
   openTasks(): void { this.closeAllSidePanels(); this.showTasks.set(true); }
   openPinned(): void { this.closeAllSidePanels(); this.showPinned.set(true); }
   openSharedMedia(): void { this.closeAllSidePanels(); this.showSharedMedia.set(true); }
+  /** Open the Message Info side panel for a specific message. */
+  openMessageInfo(msgId: string): void { this.closeAllSidePanels(); this.messageInfoFor.set(msgId); }
+  closeMessageInfo(): void { this.messageInfoFor.set(null); }
   openSearch(): void { this.showSearch.set(true); }
   openStatusEditor(): void { this.showStatusEditor.set(true); }
   closeStatusEditor(): void { this.showStatusEditor.set(false); }

@@ -29,6 +29,8 @@ import type {
   ChannelType,
   HandoffRequest,
   HandoffStatus,
+  MessageInfoResponse,
+  SectionCountsResponse,
   TransitionResult,
   UserRef,
 } from '../models/api-types';
@@ -80,7 +82,7 @@ export interface UserDraftWire {
 export interface UserPrefsWire {
   user_ref?: string;
   section_order?: string[];
-  custom_sections?: { id: string; label: string; color?: string }[];
+  custom_sections?: { id: string; label: string; color?: string; emoji?: string }[];
   updated_on?: string;
 }
 
@@ -243,6 +245,31 @@ export class ApiClientService {
     return this.get<Channel>(`/channels/${channelID}`);
   }
 
+  /** PUT /channels/:channel_id — owner/admin metadata edit. Returns the
+   *  updated channel doc. Pass only the fields you want changed; null
+   *  pointers on the server skip untouched fields. */
+  updateChannel(
+    channelID: string,
+    patch: { name?: string; description?: string; icon?: string; is_private?: boolean },
+  ): Observable<Channel> {
+    return this.put<Channel>(`/channels/${channelID}`, patch);
+  }
+
+  /** DELETE /channels/:channel_id — owner-only teardown. Hard-deletes
+   *  the channel doc; orphan member rows are dropped silently by
+   *  ListForUser's $unwind, so no client-side cleanup needed. */
+  deleteChannel(channelID: string): Observable<void> {
+    return this.delete<void>(`/channels/${channelID}`);
+  }
+
+  /** GET /users/:user_id/channels — paginated channel list for an
+   *  explicit user_ref. Today policy is "self only" so this resolves
+   *  to the same set as listChannels for the caller. Provided for
+   *  legacy URL parity. */
+  listUserChannels(userRef: string, opts?: { before?: string; limit?: number }): Observable<Channel[]> {
+    return this.get<Channel[]>(`/users/${encodeURIComponent(userRef)}/channels`, this.params(opts));
+  }
+
   /** POST /attachments — multipart upload. Returns the stored
    *  attachment metadata that can be passed verbatim into the next
    *  sendMessage's `attachments[]`. Uses bare fetch (not HttpClient)
@@ -308,6 +335,29 @@ export class ApiClientService {
    *  Returns 503 when AI backend isn't configured. */
   getAISummary(channelID: string): Observable<AISummary> {
     return this.get<AISummary>(`/channels/${channelID}/ai-summary`);
+  }
+
+  /** GET /channels/:id/ai-reply-hints — 3 short context-aware reply
+   *  suggestions for the composer chip row. Optional provider override
+   *  ("local" / "gemini_flash" / "gemini_pro"). Returns 503 when the
+   *  AI bridge isn't configured — caller falls back to the local
+   *  heuristic in services/reply-suggestions.ts. */
+  getAIReplyHints(channelID: string, provider?: string): Observable<{ suggestions: string[]; provider: string }> {
+    const q = provider ? `?provider=${encodeURIComponent(provider)}` : "";
+    return this.get<{ suggestions: string[]; provider: string }>(
+      `/channels/${channelID}/ai-reply-hints${q}`,
+    );
+  }
+
+  /** GET /channels/:id/ai-thinking-words — 5 short "Thinking…"
+   *  status phrases the UI cycles next to the spinner while the
+   *  real reply is composing. Optional `question` override —
+   *  otherwise the service uses the caller's latest message. */
+  getAIThinkingWords(channelID: string, question?: string): Observable<{ words: string[]; provider: string }> {
+    const q = question ? `?question=${encodeURIComponent(question)}` : "";
+    return this.get<{ words: string[]; provider: string }>(
+      `/channels/${channelID}/ai-thinking-words${q}`,
+    );
   }
 
   /** POST /channels/:id/unread — flip the read pointer back so the
@@ -425,6 +475,22 @@ export class ApiClientService {
     }));
   }
 
+  /** GET /me/section-counts — caller's channel counts grouped by
+   *  sidebar section (direct/spaces/ai/customers). Server-side
+   *  aggregation so the badges show real totals across the workspace
+   *  rather than whatever the local list pane has paginated in. */
+  getSectionCounts(): Observable<SectionCountsResponse> {
+    return this.get<SectionCountsResponse>('/me/section-counts');
+  }
+
+  /** GET /messages/:message_id/info — rich payload for the Message
+   *  Info side panel: who viewed (with timestamp), who hasn't, and
+   *  the reactor list per emoji. Members are hydrated with user_name
+   *  so the panel renders without a /users/lookup round-trip. */
+  getMessageInfo(messageID: string): Observable<MessageInfoResponse> {
+    return this.get<MessageInfoResponse>(`/messages/${messageID}/info`);
+  }
+
   /** GET /channels/:channel_id/info — rich payload for the header.
    *  Returns the channel doc + all members + caller's per-channel state +
    *  active handoff + counts in a single round-trip. Use on conversation
@@ -433,9 +499,30 @@ export class ApiClientService {
     return this.get<ChannelInfo>(`/channels/${channelID}/info`);
   }
 
-  /** POST /channels/:channel_id/read — advance the caller's read pointer. */
-  markChannelRead(channelID: string, messageID: string): Observable<void> {
-    return this.post<void>(`/channels/${channelID}/read`, { message_id: messageID });
+  /** PUT /channels/:channel_id/section — set the caller's per-user
+   *  sidebar section for this channel. Pass empty `sectionID` (or
+   *  null) to clear the override and fall back to the type-derived
+   *  default. Folder-style: one section per (user, channel). */
+  setChannelSection(channelID: string, sectionID: string | null): Observable<void> {
+    return this.put<void>(`/channels/${channelID}/section`, {
+      section_id: sectionID ?? '',
+    });
+  }
+
+  /** DELETE /me/sections/:section_id — demote every conv currently
+   *  in the section back to its type-default. Returns
+   *  {demoted_count} for the toast. The caller is responsible for
+   *  separately removing the section from user_preferences.custom_sections. */
+  deleteSection(sectionID: string): Observable<{ demoted_count: number }> {
+    return this.delete<{ demoted_count: number }>(`/me/sections/${encodeURIComponent(sectionID)}`);
+  }
+
+  /** POST /channels/:channel_id/read — advance the caller's read pointer.
+   *  When messageID is omitted, the server resolves to the channel's
+   *  newest visible message (bulk "Mark all as read"). */
+  markChannelRead(channelID: string, messageID?: string): Observable<{ marked_up_to?: string } | void> {
+    const body = messageID ? { message_id: messageID } : {};
+    return this.post<{ marked_up_to?: string } | void>(`/channels/${channelID}/read`, body);
   }
 
   // ── Messages ────────────────────────────────────────────────────────

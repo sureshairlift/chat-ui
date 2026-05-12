@@ -81,11 +81,18 @@
 
   <svg *ngSwitchCase="'grid-3x3'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
 
+  <svg *ngSwitchCase="'layout-grid'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3"  y="3"/><rect width="7" height="7" x="14" y="3"/><rect width="7" height="7" x="14" y="14"/><rect width="7" height="7" x="3"  y="14"/></svg>
+
+  <svg *ngSwitchCase="'users-2'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M14 19a6 6 0 0 0-12 0"/><circle cx="8" cy="9" r="4"/><path d="M22 19a6 6 0 0 0-6-6 4 4 0 1 0 0-8"/></svg>
+
   <svg *ngSwitchCase="'sparkles'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4M19 17v4M3 5h4M17 19h4"/></svg>
 
-  <svg *ngSwitchCase="'thumbs-up'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L15 2.5a.5.5 0 0 1 .5-.5 2 2 0 0 1 2 2v1.88a2 2 0 0 1-.5 1.5z"/></svg>
+  <!-- Material-style single-path outlined thumb icons. Render cleanly
+       at small sizes (14px buttons) where the previous Lucide
+       two-stroke design (separate forearm bar) read as blocky. -->
+  <svg *ngSwitchCase="'thumbs-up'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M9 21h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2zM9 9l4.34-4.34L12 10h9v2l-3 7H9V9zM1 9h4v12H1V9z"/></svg>
 
-  <svg *ngSwitchCase="'thumbs-down'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L9 21.5a.5.5 0 0 1-.5.5 2 2 0 0 1-2-2v-1.88a2 2 0 0 1 .5-1.5z"/></svg>
+  <svg *ngSwitchCase="'thumbs-down'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05C1.05 11.5 1 11.74 1 12v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm0 12-4.34 4.34L12 14H3v-2l3-7h9v10zm4-12h4v12h-4V3z"/></svg>
 
   <svg *ngSwitchCase="'bar-chart-3'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>
 
@@ -132,6 +139,8 @@
   <svg *ngSwitchCase="'folder-plus'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
 
   <svg *ngSwitchCase="'trash-2'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+
+  <svg *ngSwitchCase="'pencil'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
 
   <svg *ngSwitchCase="'building-2'" [attr.width]="size" [attr.height]="size" viewBox="0 0 24 24" [attr.fill]="fill" stroke="currentColor" [attr.stroke-width]="strokeWidth" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg>
 

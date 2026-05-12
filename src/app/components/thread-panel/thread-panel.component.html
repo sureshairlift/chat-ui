@@ -81,9 +81,16 @@
                   </div>
                   <div class="text-gray-600 line-clamp-2 mt-0.5">{{ q.text }}</div>
                 </div>
-                <!-- Body -->
+                <!-- Body — innerHTML on both branches so an HTML reply
+                     (Outlook-pasted, mention chips, link auto-format)
+                     renders properly instead of escaping into raw
+                     <p>...</p> text. The renderText pipe routes
+                     plain text through link/mention auto-formatting and
+                     html-shaped text through the sanitizer. -->
                 <div *ngIf="r.html; else replyText" class="message-html" [innerHTML]="r.html | safeHtml"></div>
-                <ng-template #replyText>{{ r.text }}</ng-template>
+                <ng-template #replyText>
+                  <span [innerHTML]="r.text | renderText"></span>
+                </ng-template>
               </div>
               <!-- Reactions (if any in initial data) -->
               <div *ngIf="r.reactions?.length" class="flex gap-1 mt-1">

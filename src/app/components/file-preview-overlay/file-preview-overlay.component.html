@@ -26,11 +26,6 @@
         </div>
 
         <!-- Header actions -->
-        <button (click)="copyContent(a)" *ngIf="canCopy()"
-          class="hidden sm:flex w-9 h-9 items-center justify-center rounded-full hover:bg-white/10 transition"
-          title="Copy contents">
-          <app-icon name="copy" [size]="16"></app-icon>
-        </button>
         <button (click)="download(a)"
           class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 transition" title="Download">
           <app-icon name="download" [size]="16"></app-icon>
@@ -57,42 +52,51 @@
           <app-icon name="chevron-right" [size]="22"></app-icon>
         </button>
 
-        <div class="flex-1 overflow-auto scrollable px-4 py-6 sm:px-8">
+        <!-- Drop the outer padding when we're rendering a real document
+             iframe (PDF / Office) so the viewer fills the available
+             area edge-to-edge. Other branches (image / synthesized
+             text / csv galleries) keep the breathing room since their
+             content is centered inside the column. -->
+        <div [class]="'flex-1 overflow-auto scrollable ' + (realPreviewUrl() ? '' : 'px-4 py-6 sm:px-8')">
 
           <!-- ============================ IMAGE ============================ -->
+          <!-- Full available width, height capped to viewport so the
+               image scales up but never overflows. object-contain
+               preserves aspect ratio. mx-auto centers within the row. -->
           <div *ngIf="a.type === 'image'" class="h-full w-full flex items-center justify-center">
-            <div class="rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden bg-white max-w-full"
-              [style.aspectRatio]="a.aspectRatio || '16 / 10'"
-              [style.background]="a.preview || 'linear-gradient(135deg, #93c5fd 0%, #c4b5fd 50%, #f9a8d4 100%)'"
-              style="background-size: cover; background-position: center; width: min(900px, 100%);">
-              <div *ngIf="!a.preview" class="h-full flex items-center justify-center text-white/80">
-                <app-icon name="image" [size]="64" [strokeWidth]="1.25"></app-icon>
+            <img *ngIf="a.url || a.preview; else imgPlaceholder"
+                 [src]="a.url || a.preview" [alt]="a.name || 'image'"
+                 class="block mx-auto rounded-lg shadow-2xl ring-1 ring-white/10 object-contain bg-white"
+                 style="width: 100%; max-height: calc(100vh - 140px);" />
+            <ng-template #imgPlaceholder>
+              <div class="rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden bg-white mx-auto"
+                   style="background: linear-gradient(135deg, #93c5fd 0%, #c4b5fd 50%, #f9a8d4 100%); width: 100%; max-height: calc(100vh - 140px); aspect-ratio: 16 / 10;">
+                <div class="h-full flex items-center justify-center text-white/80">
+                  <app-icon name="image" [size]="64" [strokeWidth]="1.25"></app-icon>
+                </div>
               </div>
-            </div>
+            </ng-template>
           </div>
 
           <!-- ============================ VIDEO ============================ -->
+          <!-- Same full-width treatment: spans the available area,
+               keeps the 16:9 ratio via height cap; native controls
+               sit inside. -->
           <div *ngIf="a.type === 'video'" class="h-full w-full flex items-center justify-center">
-            <div class="relative rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden bg-black"
-              style="width: min(960px, 100%); aspect-ratio: 16 / 9;"
-              [style.background]="a.preview || 'linear-gradient(135deg, #1f2937 0%, #4b5563 100%)'">
-              <div class="absolute inset-0 flex items-center justify-center">
-                <div class="w-20 h-20 rounded-full bg-white/95 flex items-center justify-center shadow-2xl">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" class="text-gray-900 ml-1">
-                    <polygon points="5,3 19,12 5,21"></polygon>
-                  </svg>
+            <video *ngIf="a.url; else vidPlaceholder" controls autoplay preload="metadata"
+                   [poster]="a.preview && a.preview !== a.url ? a.preview : null"
+                   [src]="a.url"
+                   class="block mx-auto rounded-lg shadow-2xl ring-1 ring-white/10 bg-black"
+                   style="width: 100%; max-height: calc(100vh - 140px);"></video>
+            <ng-template #vidPlaceholder>
+              <div class="rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden bg-black flex items-center justify-center text-white/70 mx-auto"
+                   style="width: 100%; aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1f2937 0%, #4b5563 100%);">
+                <div class="text-center">
+                  <app-icon name="film" [size]="48" class="mx-auto"></app-icon>
+                  <div class="mt-2 text-[12px]">Source URL unavailable</div>
                 </div>
               </div>
-              <!-- Mock controls bar -->
-              <div
-                class="absolute bottom-0 left-0 right-0 px-4 py-3 bg-gradient-to-t from-black/80 to-transparent flex items-center gap-3 text-[12px]">
-                <span>0:00</span>
-                <div class="flex-1 h-1 rounded-full bg-white/30 overflow-hidden">
-                  <div class="h-full w-[18%] bg-red-500 rounded-full"></div>
-                </div>
-                <span *ngIf="a.duration">{{ a.duration }}</span>
-              </div>
-            </div>
+            </ng-template>
           </div>
 
           <!-- ============================ AUDIO ============================ -->
@@ -104,33 +108,35 @@
                 </div>
                 <div class="min-w-0 flex-1">
                   <div class="text-[15px] font-semibold truncate">{{ a.name || 'Voice message' }}</div>
-                  <div class="text-[12px] text-gray-500">{{ a.duration || '0:00' }}</div>
+                  <div *ngIf="a.size" class="text-[12px] text-gray-500">{{ a.size }}</div>
                 </div>
               </div>
-              <!-- Waveform mock -->
-              <div class="flex items-center gap-0.5 h-12 mt-2">
-                <div *ngFor="let h of WAVE; let i = index" class="w-1 rounded-full" [style.height.px]="h"
-                  [style.background]="i < 18 ? '#2563eb' : '#cbd5e1'"></div>
-              </div>
-              <div class="flex items-center gap-3 mt-4">
-                <button
-                  class="w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                    <polygon points="5,3 19,12 5,21"></polygon>
-                  </svg>
-                </button>
-                <span class="text-[12px] text-gray-500 tabular-nums">0:00</span>
-                <div class="flex-1 h-1 rounded-full bg-gray-200">
-                  <div class="h-full w-[36%] rounded-full bg-blue-600"></div>
-                </div>
-                <span class="text-[12px] text-gray-500 tabular-nums">{{ a.duration || '0:00' }}</span>
-              </div>
+              <audio *ngIf="a.url; else noAudioSrc" controls preload="metadata"
+                     [src]="a.url" class="w-full"></audio>
+              <ng-template #noAudioSrc>
+                <div class="text-[12px] text-gray-500 italic">Source URL unavailable.</div>
+              </ng-template>
             </div>
           </div>
 
           <!-- ============================ FILE-type bodies ============================ -->
           <ng-container *ngIf="a.type === 'file'">
-            <ng-container [ngSwitch]="content().kind">
+            <!-- Real-document preview: PDFs render in the browser's
+                 native viewer; Office docs go through Microsoft's free
+                 embed viewer. Both require a publicly-reachable URL,
+                 which migrated attachments now carry (CDN base +
+                 filename). When this branch hits, the synthesized-
+                 mock content below is skipped. -->
+            <!-- Iframe fills the entire content area edge-to-edge.
+                 The parent scroller drops its padding when this branch
+                 is active (see realPreviewUrl() check above), so 100%
+                 width and 100% height map to the full viewer pane. -->
+            <iframe *ngIf="realPreviewUrl() as rurl"
+                    [src]="rurl"
+                    class="block w-full h-full bg-white"
+                    frameborder="0"></iframe>
+
+            <ng-container *ngIf="!realPreviewUrl()" [ngSwitch]="content().kind">
 
               <!-- Plain text -->
               <pre *ngSwitchCase="'text'"

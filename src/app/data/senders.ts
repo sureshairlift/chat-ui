@@ -1,4 +1,5 @@
 import { Sender, SendersMap } from "../models/types";
+import { colorForUserRef, initialsForName } from "../services/avatar-helpers";
 
 /** Sender directory — keyed by id, mirrors React `senders` constant 1:1. */
 export const SENDERS: SendersMap = {
@@ -79,20 +80,21 @@ export function nameForRef(ref: string): string {
 /** Register a new user_ref → Sender record at runtime. Called by the
  *  live-data adapter when a message arrives from a sender we haven't
  *  seen before — guarantees subsequent lookups succeed without a
- *  network roundtrip. Idempotent. */
+ *  network roundtrip. Idempotent.
+ *
+ *  Color + initials come from `services/avatar-helpers.ts` — the SAME
+ *  helpers AvatarComponent uses for its fallback derivation. So a
+ *  Sender record written here, when later passed to <app-avatar> with
+ *  its explicit color, produces an avatar that's IDENTICAL to the one
+ *  Avatar would have derived on its own. No drift between the two
+ *  code paths regardless of which call site renders the user. */
 export function registerLiveSender(ref: string, name: string): void {
   if (SENDERS[ref]) return;
-  // Build a default Sender record. Color is deterministic from the ref
-  // so the same user always renders the same avatar tint across reloads.
-  const palette = [
-    "bg-emerald-500", "bg-sky-500", "bg-violet-500", "bg-amber-500",
-    "bg-rose-500", "bg-teal-500", "bg-indigo-500", "bg-fuchsia-500",
-  ];
-  let h = 0;
-  for (let i = 0; i < ref.length; i++) h = (h * 31 + ref.charCodeAt(i)) >>> 0;
-  const color = palette[h % palette.length];
-  const initials = nameToInitials(name || ref);
-  SENDERS[ref] = { name: name || ref, color, initials };
+  SENDERS[ref] = {
+    name: name || ref,
+    color: colorForUserRef(ref),
+    initials: initialsForName(name, ref),
+  };
 }
 
 function nameToInitials(s: string): string {

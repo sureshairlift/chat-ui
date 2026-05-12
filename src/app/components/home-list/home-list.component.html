@@ -19,7 +19,16 @@
           </div>
           <!-- Title row: home + saved messages icon -->
           <div class="flex items-center justify-between px-4 pb-3 pt-1">
-            <h1 class="text-[22px] font-normal text-gray-900 truncate">{{ title() }}</h1>
+            <h1 class="group/hdr flex items-center gap-2 text-[22px] font-normal text-gray-900 truncate">
+              <ng-container *ngIf="titleEmoji() as e">
+                <img [src]="e | notoEmoji:'png':72" [alt]="e"
+                     class="w-6 h-6 object-contain shrink-0 group-hover/hdr:hidden" />
+                <img [src]="e | notoEmoji:'webp':512" [alt]="e"
+                     (error)="notoWebpFallback($event)"
+                     class="w-6 h-6 object-contain shrink-0 hidden group-hover/hdr:block" />
+              </ng-container>
+              <span class="truncate">{{ titleLabel() }}</span>
+            </h1>
             <div class="flex items-center gap-2">
               <button *ngIf="showFilters()" (click)="state.setView('starred')"
                 class="w-9 h-9 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600"
@@ -33,7 +42,16 @@
       <ng-template #desktopHeader>
         <div class="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
           <div class="flex items-center gap-2 min-w-0">
-            <h1 class="text-[22px] font-normal text-gray-900 truncate">{{ title() }}</h1>
+            <h1 class="group/hdr flex items-center gap-2 text-[22px] font-normal text-gray-900 truncate min-w-0">
+              <ng-container *ngIf="titleEmoji() as e">
+                <img [src]="e | notoEmoji:'png':72" [alt]="e"
+                     class="w-6 h-6 object-contain shrink-0 group-hover/hdr:hidden" />
+                <img [src]="e | notoEmoji:'webp':512" [alt]="e"
+                     (error)="notoWebpFallback($event)"
+                     class="w-6 h-6 object-contain shrink-0 hidden group-hover/hdr:block" />
+              </ng-container>
+              <span class="truncate">{{ titleLabel() }}</span>
+            </h1>
           </div>
           <div *ngIf="showFilters()" class="flex items-center gap-2">
             <label class="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer select-none">
@@ -53,15 +71,32 @@
 
         <!-- AI section -->
         <div *ngSwitchCase="'ai'" class="flex-1 overflow-y-auto scrollable">
-          <button *ngIf="aiNew()" (click)="picked.emit(aiNew()!.id)" [class]="aiNewBtnClass()"
+          <!-- "Start new AI chat" — always visible at the top of the
+               AI section. In live mode it calls chat-state's
+               startNewAIChatLive (creates an ai_direct channel,
+               prepends to the list, sets active conv). In mock mode
+               it routes to the legacy "ai-new" seed if present.
+               Disabled while the createChannel RPC is in flight to
+               prevent double-clicks creating two empty channels. -->
+          <button (click)="onStartNewAIChat()" [disabled]="creatingAIChat()"
+            [class]="aiNewBtnClass() + (creatingAIChat() ? ' opacity-60 cursor-wait' : '')"
             style="width: calc(100% - 24px);">
-            <span
+            <!-- Idle: gradient plus chip. In-flight: sparkle SVG
+                 spinner (transparent background so the SVG's aura
+                 + sparks read on the surrounding card). -->
+            <span *ngIf="!creatingAIChat()"
               class="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-sm shrink-0">
               <app-icon name="plus" [size]="16" class="text-white"></app-icon>
             </span>
+            <app-ai-spinner *ngIf="creatingAIChat()" [size]="32" [inline]="false"
+                            class="shrink-0"></app-ai-spinner>
             <div class="flex-1 min-w-0">
-              <div class="text-[14px] font-medium">New chat</div>
-              <div class="text-[12px] text-purple-700/80 mt-0.5">Start a fresh session</div>
+              <div class="text-[14px] font-medium">
+                {{ creatingAIChat() ? 'Starting…' : 'New AI chat' }}
+              </div>
+              <div class="text-[12px] text-purple-700/80 mt-0.5">
+                {{ creatingAIChat() ? 'Spinning up a fresh session' : 'Ask Airlift Intelligence anything' }}
+              </div>
             </div>
             <app-icon name="sparkles" [size]="14" class="text-purple-500"></app-icon>
           </button>

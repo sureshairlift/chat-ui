@@ -1,20 +1,39 @@
     <div class="px-4 py-3 border-t border-gray-100 bg-white">
 
-      <!-- AI quick-suggestions -->
-      <div *ngIf="isAI" class="flex items-center gap-2 mb-2 px-1 overflow-x-auto no-scrollbar">
-        <button *ngFor="let s of aiSuggestions" (click)="submitQuick(s.label)"
-          class="text-[12px] text-purple-700 border border-purple-200 bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100 transition rounded-full px-3 py-1 flex items-center gap-1.5 shrink-0">
-          <app-icon [name]="s.icon" [size]="12"></app-icon>
-          {{ s.label }}
-        </button>
-      </div>
+      <!-- AI quick-suggestions removed — the canned "Show pipeline /
+           Today's tasks / Draft follow-up / Summarize team activity"
+           row was noisy. The composer in AI chats now opens clean
+           and the streaming spinner + thinking phrases take over once
+           the user types something. -->
 
-      <!-- Quick reply chips -->
-      <div *ngIf="!isAI && lastMessageFromOther" class="flex items-center gap-2 mb-2 px-1">
-        <button *ngFor="let q of ['Thank you!', 'Are you available?', 'Sent']" (click)="submitQuick(q)"
-          class="text-[13px] text-blue-700 border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition rounded-full px-3.5 py-1">
-          {{ q }}
-        </button>
+      <!-- AI quick-reply suggestions — context-aware. The parent
+           computes 3-4 short replies from the last incoming message
+           (services/reply-suggestions.ts heuristic or the AI bridge
+           when wired) and pipes them in via [replySuggestions].
+           Clicking a chip INSERTS the text into the editor so the
+           user can review / edit / extend before sending — these
+           are suggestions, NOT auto-replies.
+           While the LLM round-trip is in flight, render 3 shimmer
+           skeletons so the user has immediate feedback that the
+           suggestion row is active. -->
+      <div *ngIf="!isAI && lastMessageFromOther && (replySuggestionsLoading || replySuggestions?.length)"
+           class="flex items-center gap-2 mb-2 px-1 overflow-x-auto no-scrollbar">
+        <span class="inline-flex items-center gap-1 text-[11px] text-purple-700 font-medium shrink-0">
+          <app-icon name="sparkles" [size]="11"></app-icon>
+          Suggested
+        </span>
+        <ng-container *ngIf="replySuggestionsLoading; else readyChips">
+          <span *ngFor="let _ of [0, 1, 2]"
+                class="inline-block h-7 w-24 rounded-full bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 animate-pulse shrink-0"
+                aria-hidden="true"></span>
+        </ng-container>
+        <ng-template #readyChips>
+          <button *ngFor="let q of replySuggestions" (click)="insertSuggestion(q)"
+            [title]="'Insert: ' + q"
+            class="text-[13px] text-blue-700 border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition rounded-full px-3.5 py-1 shrink-0">
+            {{ q }}
+          </button>
+        </ng-template>
       </div>
 
       <!-- Main editor frame -->
@@ -163,10 +182,11 @@
                 <app-icon name="smile" [size]="14"></app-icon>
               </app-toolbar-btn>
               <div *ngIf="showEmoji()"
-                class="absolute bottom-9 right-0 z-30 bg-white rounded-lg shadow-lg ring-1 ring-gray-200 p-2 grid grid-cols-8 gap-1 w-64">
+                class="absolute bottom-9 right-0 z-30 bg-white rounded-lg shadow-lg ring-1 ring-gray-200 p-2 grid grid-cols-8 gap-1 w-72 max-h-72 overflow-y-auto scrollable">
                 <button *ngFor="let em of EMOJIS" (mousedown)="$event.preventDefault()" (click)="insertEmoji(em)"
-                  class="text-[18px] hover:bg-gray-100 rounded p-0.5">
-                  {{ em }}
+                  [title]="em.name"
+                  class="hover:bg-gray-100 rounded p-1 flex items-center justify-center">
+                  <app-emoji [code]="em.code" [name]="em.name" [size]="24"></app-emoji>
                 </button>
               </div>
             </div>

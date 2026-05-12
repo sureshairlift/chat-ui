@@ -7,7 +7,9 @@ import { CommonModule } from "@angular/common";
 import { Router, RouterOutlet, NavigationEnd, ActivatedRoute } from "@angular/router";
 import { filter } from "rxjs/operators";
 import { ChatStateService } from "./services/chat-state.service";
+import { LiveDataService } from "./services/live-data.service";
 import { ToastService } from "./services/toast.service";
+import { ConfirmService } from "./services/confirm.service";
 import { BreakpointService } from "./services/breakpoint.service";
 import { IdMapperService } from "./services/id-mapper.service";
 import { BUILTIN_SECTIONS } from "./app.routes";
@@ -32,6 +34,7 @@ import { FollowingPanelComponent } from "./components/following-panel/following-
 import { TasksPanelComponent } from "./components/tasks-panel/tasks-panel.component";
 import { PinnedPanelComponent } from "./components/pinned-panel/pinned-panel.component";
 import { SharedMediaPanelComponent } from "./components/shared-media-panel/shared-media-panel.component";
+import { MessageInfoPanelComponent } from "./components/message-info-panel/message-info-panel.component";
 import { SearchModalComponent } from "./components/search-modal/search-modal.component";
 import { HomeDashboardComponent } from "./components/home-dashboard/home-dashboard.component";
 import { ConvPopupComponent } from "./components/conv-popup/conv-popup.component";
@@ -39,6 +42,8 @@ import { AICatchupBannerComponent } from "./components/ai-catchup-banner/ai-catc
 import { StatusEditorComponent } from "./components/status-editor/status-editor.component";
 import { MessageFullscreenComponent } from "./components/message-fullscreen/message-fullscreen.component";
 import { FilePreviewOverlayComponent } from "./components/file-preview-overlay/file-preview-overlay.component";
+import { ConfirmModalComponent } from "./components/confirm-modal/confirm-modal.component";
+import { suggestReplies } from "./services/reply-suggestions";
 
 interface DayGroup { key: string; label: string; messages: Message[]; }
 
@@ -76,9 +81,10 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
     ConversationHeaderComponent, MessageBubbleComponent, ComposerComponent,
     ThreadPanelComponent, BoardPanelComponent, FollowingPanelComponent,
     TasksPanelComponent, PinnedPanelComponent, SharedMediaPanelComponent,
+    MessageInfoPanelComponent,
     SearchModalComponent, HomeDashboardComponent, ConvPopupComponent,
     AICatchupBannerComponent, StatusEditorComponent, MessageFullscreenComponent,
-    FilePreviewOverlayComponent,
+    FilePreviewOverlayComponent, ConfirmModalComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./app.component.html",
@@ -86,7 +92,9 @@ interface DayGroup { key: string; label: string; messages: Message[]; }
 })
 export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy {
   state = inject(ChatStateService);
+  private readonly liveData = inject(LiveDataService, { optional: true });
   toast = inject(ToastService);
+  private confirmSvc = inject(ConfirmService);
   bp    = inject(BreakpointService);
   private router = inject(Router);
   private activatedRoute = inject(ActivatedRoute);
@@ -174,7 +182,8 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     this.state.showFollowing() ||
     this.state.showTasks() ||
     this.state.showPinned() ||
-    this.state.showSharedMedia()
+    this.state.showSharedMedia() ||
+    !!this.state.messageInfoFor()
   );
 
   /** Whether the sidebar should render in its collapsed (icon-rail) form.
@@ -775,7 +784,7 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
 
   /* =================== Resize wiring =================== */
 
-  private resizeMode: "list" | "thread" | null = null;
+  private resizeMode: "list" | "thread" | "panel" | null = null;
   private resizeStartX = 0;
   private resizeStartW = 0;
 
@@ -799,6 +808,19 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     document.body.classList.add("is-resizing");
   }
 
+  /** Start dragging the shared dock-panel resize handle. Used by
+   *  Board / Tasks / Pinned / Shared media / Following / Message
+   *  info — all share `state.panelWidth` since they're mutually
+   *  exclusive (only one mounts at a time). */
+  onStartPanelResize(e: MouseEvent): void {
+    e.preventDefault();
+    this.resizeMode = "panel";
+    this.resizeStartX = e.clientX;
+    this.resizeStartW = this.state.panelWidth();
+    this.state.panelResizing.set(true);
+    document.body.classList.add("is-resizing");
+  }
+
   @HostListener("document:mousemove", ["$event"]) onMouseMove(e: MouseEvent): void {
     if (!this.resizeMode) return;
     const delta = e.clientX - this.resizeStartX;
@@ -809,6 +831,11 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
       // Thread panel grows as we drag left, so subtract delta
       const next = Math.max(320, Math.min(640, this.resizeStartW - delta));
       this.state.threadWidth.set(next);
+    } else if (this.resizeMode === "panel") {
+      // Dock panels also dock to the right edge — drag-left to widen,
+      // drag-right to narrow. Same delta inversion as the thread.
+      const next = Math.max(320, Math.min(720, this.resizeStartW - delta));
+      this.state.panelWidth.set(next);
     }
   }
 
@@ -821,6 +848,7 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     this.resizeMode = null;
     this.state.sidebarResizing.set(false);
     this.state.threadResizing.set(false);
+    this.state.panelResizing.set(false);
     document.body.classList.remove("is-resizing");
   }
 
@@ -879,6 +907,94 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
     if (msgs.length === 0) return false;
     const last = msgs[msgs.length - 1];
     return last.sender !== "me" && last.sender !== "airliftai";
+  });
+
+  /** Text of the last incoming message — feeds the composer's
+   *  context-aware reply chips. Empty when there's no last message
+   *  or the last one is from "me" / the AI. Reactive: switching
+   *  conversations or receiving a new message refreshes the chips. */
+  lastIncomingText = computed<string>(() => {
+    const msgs = this.state.currentMessages();
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.sender === "me" || m.sender === "airliftai") continue;
+      if (m.deleted) continue;
+      // Prefer plain text; strip HTML if only html is present.
+      return (m.text || m.html || "").trim();
+    }
+    return "";
+  });
+
+  /** AI-generated suggestions cache, keyed by `${convId}|${text}` so
+   *  switching back to a conv with the same last-message reuses the
+   *  prior fetch instead of re-hitting the LLM. Cleared automatically
+   *  when the last incoming text changes. */
+  private readonly aiSuggestionsCache = signal<Record<string, string[]>>({});
+
+  /** In-flight AI fetches, keyed the same way as `aiSuggestionsCache`.
+   *  Drives the composer's loading-skeleton state — true means the
+   *  user should see shimmer placeholders instead of chips. */
+  private readonly aiSuggestionsLoading = signal<Record<string, boolean>>({});
+
+  /** Reply suggestions for the composer chips. Prefers live AI
+   *  suggestions (chat-service → Python LLM bridge) when available
+   *  and the cache has them; falls back to the local heuristic in
+   *  services/reply-suggestions.ts when offline / pre-fetch / AI
+   *  bridge down. Always returns at least 3 chips. */
+  replySuggestions = computed<string[]>(() => {
+    const text = this.lastIncomingText();
+    const convId = this.state.activeConv();
+    if (convId && text) {
+      const cached = this.aiSuggestionsCache()[`${convId}|${text}`];
+      if (cached && cached.length > 0) return cached;
+    }
+    const hints = suggestReplies(text);
+    return hints.length > 0 ? hints : ["Thanks!", "Got it", "Sure"];
+  });
+
+  /** Effect: when the active conv or last incoming message changes,
+   *  kick off an AI suggestion fetch in live mode. Cache the result
+   *  so re-renders don't re-trigger the LLM. Flips a loading flag for
+   *  the same key so the composer renders skeleton chips while the
+   *  LLM round-trip is in flight.
+   *  `allowSignalWrites: true` — this effect writes to two signals
+   *  (loading + cache) as part of its bookkeeping; without the flag,
+   *  Angular's default-strict effect runtime throws NG0600. */
+  private aiSuggestEffect = effect(() => {
+    const text = this.lastIncomingText();
+    const convId = this.state.activeConv();
+    if (!convId || !text) return;
+    if (!this.state.live() || !this.liveData) return;
+    const key = `${convId}|${text}`;
+    if (this.aiSuggestionsCache()[key]) return; // already fetched
+    if (this.aiSuggestionsLoading()[key]) return; // already in flight
+    this.aiSuggestionsLoading.update((m) => ({ ...m, [key]: true }));
+    void this.liveData
+      .loadAIReplyHints(convId)
+      .then((hints) => {
+        if (hints && hints.length > 0) {
+          this.aiSuggestionsCache.update((m) => ({ ...m, [key]: hints }));
+        }
+      })
+      .finally(() => {
+        this.aiSuggestionsLoading.update((m) => {
+          const next = { ...m };
+          delete next[key];
+          return next;
+        });
+      });
+  }, { allowSignalWrites: true });
+
+  /** True while we're waiting on the LLM round-trip for the current
+   *  conv's reply suggestions. The composer reads this and renders
+   *  shimmer-chip placeholders instead of real chips. */
+  replySuggestionsLoading = computed<boolean>(() => {
+    const text = this.lastIncomingText();
+    const convId = this.state.activeConv();
+    if (!convId || !text) return false;
+    const key = `${convId}|${text}`;
+    if (this.aiSuggestionsCache()[key]) return false;
+    return !!this.aiSuggestionsLoading()[key];
   });
 
   replyingTo = computed(() => {
@@ -1048,7 +1164,7 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
    */
   private buildAIReply(userText: string): Message {
     const lower = (userText || "").toLowerCase();
-    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
     const baseId = `m-ai-${Date.now()}`;
 
     if (
@@ -1129,6 +1245,24 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
    *  a "messages around anchor" fetch so the bubble exists before
    *  focusMessage tries to find it. The 100ms timeout still covers the
    *  layout pass. */
+  /** Jump to a pinned message from the Board panel. Same pattern as
+   *  onPickMessageFromSearch — if the message isn't already in the
+   *  loaded scroll window (common for older pins), pull an
+   *  around-anchor window first so the bubble exists before
+   *  focusMessage scrolls to it. */
+  onFocusPinnedMessage(msgId: string): void {
+    const convId = this.state.activeConv();
+    if (!convId) return;
+    const inCache = this.state.currentMessages().some((m) => m.id === msgId);
+    if (inCache || !this.state.live()) {
+      this.focusMessage(msgId);
+      return;
+    }
+    void this.state.loadMessagesAroundLive(convId, msgId).then(() => {
+      setTimeout(() => this.focusMessage(msgId), 100);
+    });
+  }
+
   onPickMessageFromSearch(e: { convId: string; msgId: string }): void {
     if (this.state.view() === "dashboard") this.state.setView("home");
     this.state.setActiveConv(e.convId);
@@ -1145,10 +1279,17 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
 
   /* ============== Bulk message actions ============== */
 
-  onBulkDelete(): void {
+  async onBulkDelete(): Promise<void> {
     const count = this.state.selectedMsgs().size;
     if (!count) return;
-    if (typeof confirm === "function" && !confirm(`Delete ${count} message${count === 1 ? "" : "s"}?`)) return;
+    const ok = await this.confirmSvc.ask({
+      title: `Delete ${count === 1 ? 'this message' : `${count} messages`}?`,
+      message: "Deleted messages are removed for everyone in the channel. This can't be undone.",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      danger: true,
+    });
+    if (!ok) return;
     const n = this.state.bulkDeleteSelected();
     if (n > 0) this.toast.show(`${n} message${n === 1 ? "" : "s"} deleted`);
     else this.toast.show("Nothing deleted — own messages only");
@@ -1255,10 +1396,71 @@ export class AppComponent implements AfterViewInit, AfterViewChecked, OnDestroy 
   }
 
   onBlockReport(): void           { this.toast.show("Reported & blocked"); }
-  onClearHistory(_id: string): void {
-    if (confirm("Clear all messages in this chat?")) {
-      this.toast.show("Chat history cleared");
+  async onClearHistory(_id: string): Promise<void> {
+    const ok = await this.confirmSvc.ask({
+      title: "Clear chat history?",
+      message: "Every message in this chat will be removed. This can't be undone.",
+      confirmLabel: "Clear history",
+      danger: true,
+    });
+    if (ok) this.toast.show("Chat history cleared");
+  }
+
+  /** "Mark all as read" header action — uses the bulk endpoint so the
+   *  server resolves the latest message id (no need to fetch it first). */
+  onMarkAllRead(id: string): void {
+    if (!this.state.live()) {
+      this.state.markConvRead(id);
+      this.toast.show("Marked all as read");
+      return;
     }
+    void this.state.markAllReadLive(id).then((ok) =>
+      this.toast.show(ok ? "Marked all as read" : "Failed to mark read"),
+    );
+  }
+
+  /** "Edit space" — collects new name + description via prompt() (the
+   *  cheapest UI that works in every browser without a modal component).
+   *  Submits PUT /channels/:id; the conversation row updates in-place
+   *  on success via state.updateConvLive's adaptChannel patch. */
+  onEditConv(conv: { id: string; name: string }): void {
+    if (!this.state.live()) {
+      this.toast.show("Editing requires a live backend");
+      return;
+    }
+    const name = (typeof prompt === "function"
+      ? prompt("Conversation name:", conv.name)
+      : conv.name);
+    if (name === null) return; // user cancelled
+    const desc = (typeof prompt === "function"
+      ? prompt("Description (optional):", "")
+      : "");
+    if (desc === null) return;
+    void this.state.updateConvLive(conv.id, {
+      name: name.trim() || undefined,
+      description: desc.trim() || undefined,
+    }).then((ok) =>
+      this.toast.show(ok ? "Conversation updated" : "Failed to update — owner/admin only"),
+    );
+  }
+
+  /** "Delete conversation" — owner-only. Confirm + fire the backend
+   *  delete; chat-state optimistically drops it from the sidebar and
+   *  rolls back on 403. */
+  async onDeleteConv(conv: { id: string; name: string }): Promise<void> {
+    const ok = await this.confirmSvc.ask({
+      title: `Delete "${conv.name}"?`,
+      message: "The conversation and its history will be permanently removed for every member.",
+      confirmLabel: "Delete conversation",
+      danger: true,
+    });
+    if (!ok) return;
+    if (!this.state.live()) {
+      this.toast.show("Delete requires a live backend");
+      return;
+    }
+    const success = await this.state.deleteConvLive(conv.id);
+    this.toast.show(success ? "Conversation deleted" : "Failed to delete — owner only");
   }
 
   /* ---- Dashboard handlers ---- */

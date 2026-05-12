@@ -127,11 +127,19 @@ export class IdMapperService {
     return this.urlToMsg.get(urlId) ?? null;
   }
   /** Used for custom user-created sections. Built-in section IDs are kept
-   *  readable in URLs and don't go through this mapper. */
+   *  readable in URLs and don't go through this mapper.
+   *
+   *  Custom sections created since the ObjectID switch already have a
+   *  24-hex id; we pass those through verbatim (same as conv/msg) so the
+   *  URL token == the persisted id and there's no hash table to keep in
+   *  sync. Legacy `custom-<timestamp>` ids still flow through the FNV
+   *  mapper for the duration of the migration window. */
   urlIdForSection(sectionId: string): string {
+    if (this.isObjectIDHex(sectionId)) return sectionId;
     return this.sectionToUrl.get(sectionId) ?? this.registerSection(sectionId);
   }
   sectionIdForUrl(urlId: string): string | null {
+    if (this.isObjectIDHex(urlId)) return urlId;
     return this.urlToSection.get(urlId) ?? null;
   }
 }

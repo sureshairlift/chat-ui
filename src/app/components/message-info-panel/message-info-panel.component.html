@@ -1,0 +1,170 @@
+<app-side-panel-shell #shell [fullscreen]="fullscreen" [width]="width"
+                      (closed)="closed.emit()" (startResize)="startResize.emit($event)">
+  <!-- Compact header: title + close X. Drops the giant pill button
+       from the earlier version so the title and close are on the
+       same row without wasted whitespace. -->
+  <div class="flex items-center px-4 py-3 border-b border-gray-100">
+    <app-icon name="check-circle-2" [size]="16" class="text-blue-600 mr-2"></app-icon>
+    <h2 class="text-[14px] font-semibold text-gray-900 flex-1">Message info</h2>
+    <button (click)="shell.handleClose()" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-600"
+            title="Close">
+      <app-icon name="x" [size]="16"></app-icon>
+    </button>
+  </div>
+
+  <!-- Message preview — shows which message you're inspecting. Sender
+       avatar + name + time + body snippet so the user has context
+       without flipping back to the bubble. Skipped when info isn't
+       loaded yet (loading state below covers that case). -->
+  <div *ngIf="info() as i" class="px-4 py-3 border-b border-gray-100 bg-gray-50/60">
+    <div class="flex items-start gap-2.5">
+      <app-avatar *ngIf="senderUser() as su" [user]="su" [size]="32"></app-avatar>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-baseline gap-2 mb-0.5">
+          <span class="text-[13px] font-semibold text-gray-900 truncate">
+            {{ i.message.sender?.user_name || i.message.sender?.ref || 'Unknown' }}
+          </span>
+          <span class="text-[11px] text-gray-500 shrink-0">
+            {{ formatViewedAt(i.message.created_on) }}
+          </span>
+        </div>
+        <!-- Render the message body as HTML — matches what the
+             conversation bubble shows. The renderText pipe routes
+             tag-bearing content through sanitizeHtml (strips style /
+             script / Office <o:p>) and plain text through the
+             mention/link helper. Falls back to an attachment hint
+             when the body is empty. -->
+        <div *ngIf="preview() as p; else fallbackPreview"
+             class="text-[12px] text-gray-700 line-clamp-3 break-words preview-body"
+             [innerHTML]="p | renderText"></div>
+        <ng-template #fallbackPreview>
+          <div class="text-[12px] text-gray-500 italic">
+            {{ i.message.attachments?.length ? '📎 ' + i.message.attachments!.length + ' attachment(s)' : '—' }}
+          </div>
+        </ng-template>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs as pill buttons + active underline indicator. Counts
+       render as inline badges so they read as one unit with the
+       label rather than detached numerals. -->
+  <div class="flex items-center gap-1 px-3 pt-3 pb-0 border-b border-gray-100">
+    <ng-container *ngFor="let t of [
+      { key: 'viewed',     label: 'Viewed',     count: info()?.viewed_by?.length ?? 0 },
+      { key: 'not_viewed', label: 'Not viewed', count: info()?.not_viewed_by?.length ?? 0 },
+      { key: 'reactions',  label: 'Reactions',  count: info()?.reactions?.length ?? 0 }
+    ]">
+      <button (click)="tab.set(t.key)"
+              [class]="'relative px-3 py-2 text-[13px] transition flex items-center gap-1.5 ' +
+                (tab() === t.key ? 'text-blue-700 font-semibold' : 'text-gray-600 hover:text-gray-900')">
+        {{ t.label }}
+        <span [class]="'text-[11px] font-medium rounded-full px-1.5 py-0.5 tabular-nums ' +
+                       (tab() === t.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')">
+          {{ t.count }}
+        </span>
+        <!-- Active underline indicator -->
+        <span *ngIf="tab() === t.key"
+              class="absolute left-2 right-2 -bottom-px h-0.5 bg-blue-600 rounded-full"></span>
+      </button>
+    </ng-container>
+  </div>
+
+  <!-- Body -->
+  <div class="flex-1 overflow-y-auto scrollable">
+    <!-- Loading -->
+    <div *ngIf="loading() && !info()" class="px-5 py-10 text-center text-[13px] text-gray-500">
+      <div class="inline-block h-4 w-4 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin mr-2 align-middle"></div>
+      Loading…
+    </div>
+
+    <!-- Error -->
+    <div *ngIf="!loading() && !info()" class="px-5 py-10 text-center text-[13px] text-gray-500">
+      <app-icon name="shield-alert" [size]="28" class="text-gray-300 mx-auto block mb-2"></app-icon>
+      Couldn't load message info.
+    </div>
+
+    <ng-container *ngIf="info() as i">
+      <!-- ───────────── Viewed ───────────── -->
+      <div *ngIf="tab() === 'viewed'" class="py-2">
+        <div *ngIf="i.viewed_by.length === 0"
+             class="px-5 py-10 text-center text-[13px] text-gray-500">
+          <app-icon name="check-circle-2" [size]="28" class="text-gray-300 mx-auto block mb-2"></app-icon>
+          No one has viewed this yet.
+        </div>
+        <div *ngFor="let v of i.viewed_by"
+             class="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 transition">
+          <app-avatar [user]="userFor(v.user_ref, v.user_name)" [size]="36"></app-avatar>
+          <div class="flex-1 min-w-0">
+            <div class="text-[13px] font-medium text-gray-900 truncate">{{ v.user_name || v.user_ref }}</div>
+            <div *ngIf="v.email" class="text-[11px] text-gray-500 truncate">{{ v.email }}</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-[11px] text-gray-500">{{ formatViewedAt(v.viewed_on) }}</div>
+            <div class="text-[10px] text-emerald-600 font-medium mt-0.5 flex items-center gap-1 justify-end">
+              <app-icon name="check" [size]="11"></app-icon>
+              Seen
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ───────────── Not viewed ───────────── -->
+      <div *ngIf="tab() === 'not_viewed'" class="py-2">
+        <div *ngIf="i.not_viewed_by.length === 0"
+             class="px-5 py-10 text-center text-[13px] text-gray-500">
+          <app-icon name="check-circle-2" [size]="28" class="text-emerald-400 mx-auto block mb-2"></app-icon>
+          Everyone has seen this message.
+        </div>
+        <div *ngFor="let m of i.not_viewed_by"
+             class="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 transition">
+          <app-avatar [user]="userFor(m.user_ref, m.user_name)" [size]="36"></app-avatar>
+          <div class="flex-1 min-w-0">
+            <div class="text-[13px] font-medium text-gray-900 truncate">{{ m.user_name || m.user_ref }}</div>
+            <div *ngIf="m.email" class="text-[11px] text-gray-500 truncate">{{ m.email }}</div>
+          </div>
+          <div class="text-[10px] text-gray-400 font-medium shrink-0">
+            Not seen
+          </div>
+        </div>
+      </div>
+
+      <!-- ───────────── Reactions ───────────── -->
+      <div *ngIf="tab() === 'reactions'" class="py-2">
+        <div *ngIf="i.reactions.length === 0"
+             class="px-5 py-10 text-center text-[13px] text-gray-500">
+          No reactions yet.
+        </div>
+        <div *ngFor="let r of i.reactions" class="px-4 py-3 border-b border-gray-50 last:border-b-0">
+          <!-- Big emoji + count -->
+          <div class="flex items-center gap-2.5 mb-2">
+            <div class="w-9 h-9 rounded-full bg-gray-50 ring-1 ring-gray-100 flex items-center justify-center">
+              <ng-container *ngIf="codeFor(r.emoji) as c; else rawEm">
+                <app-emoji [code]="c" [name]="r.emoji" [size]="22"></app-emoji>
+              </ng-container>
+              <ng-template #rawEm><span class="text-[20px]">{{ r.emoji }}</span></ng-template>
+            </div>
+            <div class="flex-1">
+              <div class="text-[13px] font-semibold text-gray-900 tabular-nums">
+                {{ r.count }} {{ r.count === 1 ? 'reaction' : 'reactions' }}
+              </div>
+              <div class="text-[11px] text-gray-500">{{ r.emoji }} reacted</div>
+            </div>
+          </div>
+          <!-- Reactor list with avatars -->
+          <div class="flex flex-col gap-1.5 pl-12">
+            <div *ngFor="let ref of r.user_refs; let i = index"
+                 class="flex items-center gap-2">
+              <app-avatar
+                [user]="userFor(ref, (r.user_names || [])[i])"
+                [size]="22"></app-avatar>
+              <span class="text-[12px] text-gray-700 truncate">
+                {{ (r.user_names || [])[i] || ref }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+  </div>
+</app-side-panel-shell>

@@ -117,6 +117,24 @@ export interface Channel {
   archived?: boolean;
   archived_at?: string;
   archived_by?: UserRef;
+
+  /** Caller's per-user section override for this channel, projected
+   *  from channel_members.section_id by the ListForUser aggregation.
+   *  Empty when no override (the conv falls back to the type-derived
+   *  default). Used by the sidebar to bucket each conv correctly
+   *  without a separate /members round-trip. */
+  my_section_id?: string;
+
+  /** Caller's per-member flags projected from channel_members by the
+   *  ListForUser aggregation — same transient pattern as
+   *  my_section_id. Drives Unread/Pinned/Mute filters on the initial
+   *  channels load without requiring a per-conv /info fetch. */
+  my_is_pinned?: boolean;
+  my_is_starred?: boolean;
+  my_is_muted?: boolean;
+  my_is_archived?: boolean;
+  my_unread_count?: number;
+  my_unread_mention_count?: number;
 }
 
 // ── Channel members ──────────────────────────────────────────────────
@@ -162,6 +180,10 @@ export interface ChannelMember {
   is_muted?: boolean;
   is_archived?: boolean;
   notification_pref?: NotificationPref;
+  /** Per-user sidebar section override. Empty when the conversation
+   *  falls back to its type-derived default (DM → direct, space →
+   *  spaces, etc.). Set by PUT /channels/:id/section. */
+  section_id?: string;
 }
 
 // ── Messages ─────────────────────────────────────────────────────────
@@ -199,6 +221,42 @@ export interface ApiAttachment {
   width?: number;
   height?: number;
   duration?: number;
+}
+
+/** GET /me/section-counts — caller's channel-membership counts
+ *  bucketed by sidebar section. Drives the badges on Direct/Spaces/
+ *  AI/Customers (so they reflect real server totals instead of the
+ *  paginated client cache). */
+export interface SectionCountsResponse {
+  direct: number;
+  spaces: number;
+  ai: number;
+  customers: number;
+  total: number;
+  /** Per-custom-section counts, keyed by section id. Built-in
+   *  sections live on the top-level fields above. */
+  custom?: Record<string, number>;
+}
+
+/** Backend response shape for GET /messages/:message_id/info. Drives
+ *  the Message Info side panel. */
+export interface MessageInfoResponse {
+  message: ApiMessage;
+  channel: Channel;
+  viewed_by: Array<{
+    user_ref: string;
+    user_name?: string;
+    email?: string;
+    role?: string;
+    viewed_on: string;
+  }>;
+  not_viewed_by: ChannelMember[];
+  reactions: Array<{
+    emoji: string;
+    count: number;
+    user_refs: string[];
+    user_names?: string[];
+  }>;
 }
 
 export interface ApiMentions {
@@ -260,6 +318,11 @@ export interface ApiMessage {
   content_format: ContentFormat;
   blocks?: Block[];
   block_schema_version?: number;
+  /** Discriminator for type=system messages — drives icon/color in
+   *  the bubble's system-event renderer (pinned/unpinned/member_added/
+   *  channel_renamed/etc). Free-form string so the backend can add
+   *  new event kinds without a coordinated frontend release. */
+  system_event?: string;
 
   attachments?: ApiAttachment[];
   mentions: ApiMentions;
@@ -272,8 +335,19 @@ export interface ApiMessage {
   edited_at?: string;
   edit_count?: number;
   edit_history?: ApiEditEntry[];
+  /** Boolean tombstone flag — set by SoftDelete. The bubble renders
+   *  "Message deleted by its author" when true; the content stays on
+   *  the doc for audit but isn't shown. Prefer this over checking
+   *  `deleted_at` (kept around for migration / older clients). */
+  is_deleted?: boolean;
   deleted_at?: string;
   deleted_by?: UserRef;
+  /** Channel-shared pin state. Set by POST/DELETE /messages/:id/pin
+   *  and surfaced inline on every message so the bubble can render a
+   *  pinned indicator without needing the separate pinnedMsgs cache. */
+  is_pinned?: boolean;
+  pinned_by?: UserRef;
+  pinned_on?: string;
 
   /** Per-user save (a.k.a. "star"). Array of user_refs. */
   starred_by?: UserRef[];

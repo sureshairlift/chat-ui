@@ -4,6 +4,7 @@ import {
 import { CommonModule } from "@angular/common";
 import { FilePreviewService } from "../../services/file-preview.service";
 import { synthesizeFileContent, PreviewContent } from "../../services/synth-file-content";
+import { DomSanitizer, SafeResourceUrl } from "@angular/platform-browser";
 import { ToastService } from "../../services/toast.service";
 import { Attachment } from "../../models/types";
 import { FILE_TYPE_INFO } from "../../data/file-type-info";
@@ -38,6 +39,7 @@ import { FileTypeIconComponent } from "../file-type-icon/file-type-icon.componen
 export class FilePreviewOverlayComponent {
   svc   = inject(FilePreviewService);
   toast = inject(ToastService);
+  private sanitizer = inject(DomSanitizer);
 
   /** Current attachment being shown (or null). */
   att = computed<Attachment | null>(() => this.svc.active());
@@ -97,11 +99,6 @@ export class FilePreviewOverlayComponent {
     return out;
   });
 
-  canCopy = computed<boolean>(() => {
-    const k = this.content().kind;
-    return k === "text" || k === "code" || k === "json" || k === "markdown" || k === "csv" || k === "table";
-  });
-
   /** Pre-baked decorative gradient backgrounds for the slide mocks. */
   private static SLIDE_BGS = [
     "linear-gradient(135deg,#1e3a8a,#6366f1)",
@@ -114,11 +111,41 @@ export class FilePreviewOverlayComponent {
     return FilePreviewOverlayComponent.SLIDE_BGS[i % FilePreviewOverlayComponent.SLIDE_BGS.length];
   }
 
-  readonly WAVE = [
-    8, 14, 10, 18, 12, 22, 14, 26, 16, 24, 12, 20,
-    14, 22, 18, 14, 10, 16, 12, 18, 8, 14, 10, 16,
-    12, 18, 14, 22, 18, 14, 10, 6,
-  ];
+  /** Render path picker — when the attachment has a real URL AND its
+   *  extension can be displayed natively (PDF) or via a third-party
+   *  viewer (Office docs), we'll render an iframe instead of running
+   *  synthesizeFileContent's mock body. Returns null when no real
+   *  preview is possible (caller falls back to the synthesized view).
+   *
+   *  Office viewer URL format:
+   *    https://view.officeapps.live.com/op/embed.aspx?src=<url-encoded>
+   *  Microsoft hosts this for free; works with publicly-reachable
+   *  source URLs. xlsx/docx/pptx (and the older .xls/.doc/.ppt)
+   *  all render in-place. */
+  realPreviewUrl = computed<SafeResourceUrl | null>(() => {
+    const a = this.svc.active();
+    if (!a || !a.url) return null;
+    const ext = this.extOf(a);
+    let raw: string | null = null;
+    if (ext === "pdf") {
+      // Hide Chrome's built-in PDF toolbar (download/print/zoom/etc.)
+      // and the side nav pane. The fragment params are part of the
+      // Adobe PDF Open Parameters spec, partially supported by Chrome's
+      // viewer — toolbar visibility is all-or-nothing here, so this
+      // also drops zoom/rotate. Our own header still has Download +
+      // Close + nav-prev/next, so the user isn't stranded.
+      raw = a.url + "#toolbar=0&navpanes=0";
+    } else if (
+      ext === "xlsx" || ext === "xls" ||
+      ext === "docx" || ext === "doc" ||
+      ext === "pptx" || ext === "ppt"
+    ) {
+      raw = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(a.url)}`;
+    }
+    // Iframe `[src]` is a resource-URL context — Angular sanitizes
+    // and refuses unrecognised URLs unless we mark them trusted.
+    return raw ? this.sanitizer.bypassSecurityTrustResourceUrl(raw) : null;
+  });
 
   /* ============================ Helpers ============================ */
 
@@ -157,10 +184,33 @@ export class FilePreviewOverlayComponent {
     if (e.target === e.currentTarget) this.svc.close();
   }
 
+  /** Pull the on-disk storage filename out of the URL. The user-facing
+   *  `a.name` is the friendly display label (e.g. "Airlift Vietnamese
+   *  - 2 (1).pdf"), but downloads should land with the actual storage
+   *  filename so server-side audit logs / re-uploads / shared links
+   *  all reference the same canonical name.
+   *
+   *  Returns "" if no URL is set; caller should fall back to a.name. */
+  storageNameOf(a: Attachment): string {
+    if (!a.url) return "";
+    try {
+      const path = new URL(a.url, window.location.origin).pathname;
+      const last = path.substring(path.lastIndexOf("/") + 1);
+      return decodeURIComponent(last);
+    } catch {
+      // a.url isn't a parseable URL — strip query/hash and take the
+      // last segment defensively.
+      const noQuery = a.url.split(/[?#]/)[0];
+      return noQuery.substring(noQuery.lastIndexOf("/") + 1) || "";
+    }
+  }
+
   download(a: Attachment): void {
-    // The seed data has no real file URLs, so we synthesise the body for
-    // text-shaped types and trigger a download. For binary/image/video/audio
-    // we just toast — the demo doesn't ship real bytes.
+    // Always use the storage filename for `link.download` so the saved
+    // file matches what's on disk. Synthesised text/csv exports keep
+    // the storage name too (those branches only fire when no URL is
+    // available, so they fall back to "file.txt"/"file.csv").
+    const storage = this.storageNameOf(a);
     const c = this.content();
     if (a.type === "file" && (c.kind === "text" || c.kind === "code"
         || c.kind === "json" || c.kind === "markdown")) {
@@ -168,7 +218,7 @@ export class FilePreviewOverlayComponent {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = a.name || "file.txt";
+      link.download = storage || "file.txt";
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       return;
@@ -181,24 +231,41 @@ export class FilePreviewOverlayComponent {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = a.name || "file.csv";
+      link.download = storage || "file.csv";
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       return;
     }
-    this.toast.show(`Download started · ${a.name || "file"}`);
-  }
-
-  copyContent(a: Attachment): void {
-    const c = this.content();
-    let text = "";
-    if (c.body) text = c.body;
-    else if (c.rows) text = c.rows.map((r) => r.join("\t")).join("\n");
-    if (!text) { this.toast.show("Nothing to copy"); return; }
-    navigator.clipboard?.writeText(text).then(
-      () => this.toast.show("Copied to clipboard"),
-      () => this.toast.show("Copy failed"),
-    );
+    // Real-URL path — fetch the bytes and save under the storage name.
+    // Doing it through a blob (instead of `<a href download>` directly)
+    // is what makes the rename actually stick for cross-origin URLs:
+    // the browser ignores `download="..."` on an anchor pointing at a
+    // different origin unless the response carries
+    // `Content-Disposition: attachment`, which the CDN doesn't set.
+    if (a.url) {
+      this.toast.show(`Download started · ${storage || "file"}`);
+      void fetch(a.url)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.blob();
+        })
+        .then((blob) => {
+          const objURL = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = objURL;
+          link.download = storage || a.name || "file";
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(objURL), 1000);
+        })
+        .catch((err) => {
+          // CORS or network failure — fall back to navigating directly.
+          // Loses the rename but at least the file becomes reachable.
+          this.toast.show(`Download failed (${err.message}); opening in new tab`);
+          window.open(a.url!, "_blank", "noopener");
+        });
+      return;
+    }
+    this.toast.show(`No file to download`);
   }
 
   /* ============================ Keyboard ============================ */

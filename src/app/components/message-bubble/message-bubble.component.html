@@ -1,9 +1,13 @@
-    <!-- System message — centered pinned-to-board notice -->
+    <!-- System message — centered event notice (pin, member added,
+         channel renamed, etc). The icon and color come from
+         `systemIcon` so different event types can theme themselves.
+         Content is the rendered system text from the backend — it
+         already arrives pre-formatted with the actor name. -->
     <ng-container *ngIf="msg.type === 'system'; else nonSystem">
-      <div class="flex items-center justify-center gap-2 py-2">
-        <app-icon name="pin" [size]="14" class="text-orange-500"></app-icon>
-        <span class="text-[12px] text-gray-600">
-          <span class="font-medium">Rajsuresh Airlift</span> pinned a message to the board
+      <div class="flex items-center justify-center gap-2 py-2 px-4">
+        <app-icon [name]="systemIcon.name" [size]="14" [class]="systemIcon.color"></app-icon>
+        <span class="text-[13px] text-gray-600 text-center">
+          <span [innerHTML]="(msg.text || msg.html || '') | renderText"></span>
         </span>
       </div>
     </ng-container>
@@ -13,52 +17,119 @@
          (LiveMessage from the backend) AND falls back to the legacy
          ai-chart/list/rated dispatch for mock-data messages. -->
     <ng-template #nonSystem>
-      <ng-container *ngIf="isAIRich || isAIText || hasBlocks; else regular">
-        <div class="group flex gap-3 px-3 sm:px-6 py-1">
-          <div class="w-9 shrink-0 flex justify-center pt-1">
+      <ng-container *ngIf="isAIRich || isAIText || hasBlocks || isAIStreaming; else regular">
+        <!-- Claude-style AI message: no avatar column, no gradient
+             card, full prose width with a subtle "Airlift Intelligence"
+             role label and the timestamp on hover only. Falls back to
+             the legacy gradient-card layout when the conv is NOT an
+             AI chat (e.g. AI rich messages embedded in a normal
+             channel). -->
+        <ng-container *ngIf="inAIConv; else aiCardLayout">
+          <div class="group py-4 px-2">
             <div *ngIf="showAvatar"
-              class="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-sm">
-              <app-icon name="sparkles" [size]="14" class="text-white"></app-icon>
-            </div>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div *ngIf="showAvatar" class="flex items-baseline gap-2 mb-1">
-              <span class="text-[14px] font-semibold text-gray-900">Airlift Intelligence</span>
-              <span
-                class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 text-purple-700">
-                AI
-              </span>
-              <span class="text-[11px] text-gray-500">{{ msg.time }}</span>
+                 class="flex items-baseline gap-2 mb-1 text-[12px] text-gray-500">
+              <app-icon name="sparkles" [size]="12" class="text-purple-500"></app-icon>
+              <span class="font-medium text-gray-700">Airlift Intelligence</span>
+              <span class="opacity-0 group-hover:opacity-100 transition">{{ msg.time }}</span>
             </div>
 
-            <!-- New block protocol (preferred when present). -->
-            <ng-container *ngIf="hasBlocks; else legacyAi">
-              <div
-                class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-2xl space-y-2">
-                <app-block-renderer *ngFor="let b of blocks; trackBy: trackBlock" [block]="b"
-                  (action)="onBlockAction($event)" (submit)="onBlockFormSubmit($event)">
-                </app-block-renderer>
+            <!-- Streaming placeholder — Claude-style: spinner + rotating thought
+                 inline with the message column, no surrounding card. -->
+            <ng-container *ngIf="isAIStreaming && !hasBlocks">
+              <div class="flex items-center gap-3 py-1">
+                <app-ai-spinner [size]="24" [inline]="true"></app-ai-spinner>
+                <span class="text-[13px] text-purple-700 font-medium transition-opacity"
+                      [key]="thinkingIndex()">
+                  {{ currentThinkingWord }}
+                </span>
               </div>
             </ng-container>
 
-            <!-- Legacy mock-data path — kept until all components migrate. -->
-            <ng-template #legacyAi>
+            <!-- Block protocol — no card wrapper in AI convs, blocks
+                 render directly on the page background like Claude. -->
+            <div *ngIf="hasBlocks" class="space-y-2 text-[15px] leading-relaxed text-gray-900">
+              <app-block-renderer *ngFor="let b of blocks; trackBy: trackBlock" [block]="b"
+                (action)="onBlockAction($event)" (submit)="onBlockFormSubmit($event)">
+              </app-block-renderer>
+            </div>
+
+            <!-- Legacy AI message types (mock data path) — still
+                 surface as plain prose in the AI conv. -->
+            <ng-container *ngIf="!hasBlocks && !isAIStreaming">
               <app-ai-chart-message *ngIf="msg.type === 'ai-chart'" [msg]="msg"></app-ai-chart-message>
               <app-ai-list-message *ngIf="msg.type === 'ai-list'" [msg]="msg"></app-ai-list-message>
               <app-ai-rated-message *ngIf="msg.type === 'ai-rated'" [msg]="msg"></app-ai-rated-message>
               <div *ngIf="msg.type === 'ai-text'"
-                class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-lg text-[14px] leading-relaxed text-gray-900 whitespace-pre-wrap">
+                class="text-[15px] leading-relaxed text-gray-900 whitespace-pre-wrap">
                 {{ msg.text }}
               </div>
-            </ng-template>
+            </ng-container>
           </div>
-        </div>
+        </ng-container>
+
+        <!-- Legacy gradient-card layout for AI messages outside the
+             AI section (e.g. an AI summary embedded in a regular
+             channel). Same structure as before this refactor. -->
+        <ng-template #aiCardLayout>
+          <div class="group flex gap-3 px-3 sm:px-6 py-1">
+            <div class="w-9 shrink-0 flex justify-center pt-1">
+              <div *ngIf="showAvatar"
+                class="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-sm">
+                <app-icon name="sparkles" [size]="14" class="text-white"></app-icon>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div *ngIf="showAvatar" class="flex items-baseline gap-2 mb-1">
+                <span class="text-[14px] font-semibold text-gray-900">Airlift Intelligence</span>
+                <span
+                  class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gradient-to-r from-blue-100 to-purple-100 text-purple-700">
+                  AI
+                </span>
+                <span class="text-[11px] text-gray-500">{{ msg.time }}</span>
+              </div>
+              <ng-container *ngIf="isAIStreaming && !hasBlocks">
+                <div
+                  class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-2xl flex items-center gap-3">
+                  <app-ai-spinner [size]="28" [inline]="true"></app-ai-spinner>
+                  <span class="text-[13px] text-purple-700 font-medium transition-opacity"
+                        [key]="thinkingIndex()">
+                    {{ currentThinkingWord }}
+                  </span>
+                </div>
+              </ng-container>
+              <ng-container *ngIf="hasBlocks; else legacyAi">
+                <div
+                  class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-2xl space-y-2">
+                  <app-block-renderer *ngFor="let b of blocks; trackBy: trackBlock" [block]="b"
+                    (action)="onBlockAction($event)" (submit)="onBlockFormSubmit($event)">
+                  </app-block-renderer>
+                </div>
+              </ng-container>
+              <ng-template #legacyAi>
+                <app-ai-chart-message *ngIf="msg.type === 'ai-chart'" [msg]="msg"></app-ai-chart-message>
+                <app-ai-list-message *ngIf="msg.type === 'ai-list'" [msg]="msg"></app-ai-list-message>
+                <app-ai-rated-message *ngIf="msg.type === 'ai-rated'" [msg]="msg"></app-ai-rated-message>
+                <div *ngIf="msg.type === 'ai-text'"
+                  class="rounded-2xl bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 border border-purple-100 px-4 py-3 max-w-lg text-[14px] leading-relaxed text-gray-900 whitespace-pre-wrap">
+                  {{ msg.text }}
+                </div>
+              </ng-template>
+            </div>
+          </div>
+        </ng-template>
       </ng-container>
 
-      <!-- Regular bubble (or quoted reply, or meeting card) -->
+      <!-- Regular bubble (or quoted reply, or meeting card).
+           Wrapped in *ngIf="hasAnyContent" so messages with literally
+           nothing to render (legacy migration artifacts with empty
+           content + no attachments) don't occupy a blank row in the
+           feed. -->
       <ng-template #regular>
-        <div #root [class]="rootClass" (mouseenter)="hover.set(true)" (mouseleave)="onLeave()">
-          <div class="w-9 shrink-0 flex justify-center pt-1 relative">
+        <div *ngIf="hasAnyContent" #root [class]="rootClass" (mouseenter)="hover.set(true)" (mouseleave)="onLeave()">
+          <!-- Avatar column hidden in AI convs (Claude-style: no
+               avatar gutter for user messages, which sit as a small
+               right-aligned pill). -->
+          <div *ngIf="!inAIConv" class="w-9 shrink-0 flex justify-center pt-1 relative">
             <!-- Avatar hides when the checkbox is showing so the two don't
                  stack on top of each other — the checkbox visually replaces
                  the avatar slot in bulk-action mode. -->
@@ -73,13 +144,39 @@
           </div>
 
           <div [class]="'flex-1 min-w-0 ' + (isMe ? 'flex flex-col items-end' : '')">
-            <!-- Author + time row -->
-            <div *ngIf="showAvatar && !isMe" class="flex items-baseline gap-2 mb-0.5">
+            <!-- Author + time row. A solid amber pin icon appears
+                 inline when the message is pinned to the channel
+                 board; clicking it opens the Board panel. No "Pinned"
+                 label — the icon alone is enough signal.
+                 Hidden in AI convs to keep the layout prose-clean
+                 (no per-message author/timestamp clutter). -->
+            <div *ngIf="showAvatar && !isMe && !inAIConv" class="flex items-baseline gap-2 mb-0.5">
               <span class="text-[14px] font-semibold text-gray-900">{{ sender?.name }}</span>
               <span class="text-[11px] text-gray-500">{{ msg.time }}</span>
               <span *ngIf="msg.edited" class="text-[11px] text-gray-500">• Edited</span>
+              <button *ngIf="isPinned" (click)="state.openBoard()" title="Pinned · view on the board"
+                      class="inline-flex items-center justify-center text-amber-600 hover:text-amber-700 transition">
+                <app-icon name="pin" [size]="12" [fill]="'currentColor'"></app-icon>
+              </button>
             </div>
-            <div *ngIf="isMe && showAvatar" class="text-[11px] text-gray-500 mb-1">{{ msg.time }}</div>
+            <!-- "me" / right-aligned row (also hidden in AI convs). -->
+            <div *ngIf="isMe && showAvatar && !inAIConv" class="flex items-baseline gap-2 mb-1 justify-end">
+              <button *ngIf="isPinned" (click)="state.openBoard()" title="Pinned · view on the board"
+                      class="inline-flex items-center justify-center text-amber-600 hover:text-amber-700 transition">
+                <app-icon name="pin" [size]="12" [fill]="'currentColor'"></app-icon>
+              </button>
+              <span class="text-[11px] text-gray-500">{{ msg.time }}</span>
+            </div>
+            <!-- No author row (consecutive messages from same sender)
+                 — float just the pin icon above the bubble, aligned
+                 to the message side. -->
+            <div *ngIf="!showAvatar && isPinned"
+                 [class]="'flex mb-0.5 ' + (isMe ? 'justify-end' : '')">
+              <button (click)="state.openBoard()" title="Pinned · view on the board"
+                      class="inline-flex items-center justify-center text-amber-600 hover:text-amber-700 transition">
+                <app-icon name="pin" [size]="12" [fill]="'currentColor'"></app-icon>
+              </button>
+            </div>
 
             <!-- Meeting card -->
             <ng-container *ngIf="msg.type === 'meeting'; else bubble">
@@ -99,9 +196,14 @@
               </div>
             </ng-container>
 
-            <!-- Standard bubble -->
+            <!-- Standard bubble — only rendered when there's actual body
+                 content (text / html / quoted reply / edit mode /
+                 deleted tombstone). When the message is attachment-only
+                 (most common after migration), skipping the shell
+                 removes the empty colored pill so the file cards
+                 render alone. -->
             <ng-template #bubble>
-              <div [class]="bubbleClass">
+              <div *ngIf="hasBubbleBody" [class]="bubbleClass">
                 <!-- Quoted reply — renders whenever the message has a
                      quoted parent (live messages set msg.quoted via the
                      adapter; mock-data messages of type='quote' also
@@ -148,7 +250,7 @@
                   <div *ngIf="msg.deleted; else liveBody"
                     class="text-[13px] italic text-gray-500 inline-flex items-center gap-1.5">
                     <app-icon name="trash-2" [size]="12" class="text-gray-400"></app-icon>
-                    This message was deleted by the sender
+                    Message deleted by its author
                   </div>
                   <ng-template #liveBody>
                     <div class="message-body-scroll max-w-full">
@@ -165,8 +267,31 @@
                 </ng-template>
 
                 <!-- Hover action toolbar — hidden on tombstoned messages
-                     (no body to react/reply/edit/forward against). -->
-                <div *ngIf="hover() && !msg.deleted" [class]="'absolute -top-4 z-20 ' + (isMe ? 'left-2' : 'right-2')">
+                     (no body to react/reply/edit/forward against).
+                     `bottom-full` puts the toolbar's bottom edge at
+                     the bubble's top edge WITHOUT using a CSS
+                     transform (a transform here would create a new
+                     containing block for the fixed-position dropdown
+                     inside and break its viewport-anchored
+                     positioning).
+                     Direction: isMe → `right-2` (toolbar's right
+                     edge near the bubble's right edge, extends
+                     leftward — into the open row middle, away from
+                     the viewport-right edge); non-me → `left-2`
+                     (toolbar's left edge near the bubble's left
+                     edge, extends rightward — into the open row
+                     middle, away from the conv-pane-left edge).
+                     This grows the toolbar AWAY from the
+                     pane edges so narrow bubbles like "hi" don't
+                     clip off-screen. The author/timestamp text
+                     sits ABOVE the bubble in its own row and gets
+                     covered by the toolbar at the same horizontal
+                     position — acceptable since hovering is a
+                     transient state and z-20 keeps the toolbar
+                     legible. -->
+                <div *ngIf="hover() && !msg.deleted && !pickerFor() && !inAIConv"
+                     [class]="'absolute bottom-full z-20 ' +
+                              (isMe ? 'right-2' : 'left-2')">
                   <div class="flex items-center bg-white border border-gray-200 rounded-full shadow-sm">
                     <button (click)="$event.stopPropagation(); togglePicker()"
                       class="w-7 h-7 shrink-0 flex items-center justify-center hover:bg-gray-100 rounded-full text-gray-600"
@@ -188,63 +313,26 @@
                           (showMenu() ? 'bg-gray-200 text-gray-800' : 'hover:bg-gray-100 text-gray-600')" title="More">
                         <app-icon name="more-horizontal" [size]="14"></app-icon>
                       </button>
-                      <div *ngIf="showMenu()" [class]="moreMenuClass">
-                        <button (click)="copyText()"
-                          class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
-                          <app-icon name="copy" [size]="14" class="text-gray-500"></app-icon>
-                          Copy text
-                        </button>
-                        <button type="button" (mousedown)="$event.stopPropagation()"
-                          (click)="$event.stopPropagation(); onExpandMessage()"
-                          class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
-                          <app-icon name="maximize-2" [size]="14" class="text-gray-500"></app-icon>
-                          Expand
-                        </button>
-                        <button (click)="onTogglePin()"
-                          class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
-                          <app-icon name="pin" [size]="14" [class]="isPinned ? 'text-amber-600' : 'text-gray-500'">
-                          </app-icon>
-                          {{ isPinned ? 'Unpin' : 'Pin' }}
-                        </button>
-                        <button (click)="onToggleSave()"
-                          class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
-                          <app-icon name="bookmark" [size]="14" [class]="isSaved ? 'text-amber-600' : 'text-gray-500'">
-                          </app-icon>
-                          {{ isSaved ? 'Unsave' : 'Save' }}
-                        </button>
-                        <button (click)="onEnterBulkForward()"
-                          class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
-                          <app-icon name="send" [size]="14" class="text-gray-500"></app-icon>
-                          Forward
-                        </button>
-                        <button (click)="onCreateTask()"
-                          class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
-                          <app-icon name="check-circle-2" [size]="14" class="text-gray-500"></app-icon>
-                          Create task
-                        </button>
-                        <ng-container *ngIf="isMe">
-                          <div class="h-px bg-gray-100 my-1"></div>
-                          <button (click)="startEdit()"
-                            class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                              stroke-width="2">
-                              <path d="M12 20h9M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />
-                            </svg>
-                            Edit
-                          </button>
-                          <button (click)="onEnterBulkDelete()"
-                            class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-red-50 text-red-600 text-left">
-                            <app-icon name="trash-2" [size]="14"></app-icon>
-                            Delete
-                          </button>
-                        </ng-container>
-                      </div>
+                      <ng-container *ngIf="showMenu()">
+                        <ng-container *ngTemplateOutlet="moreDropdown"></ng-container>
+                      </ng-container>
                     </div>
                   </div>
                 </div>
 
-                <!-- Reaction picker -->
-                <div *ngIf="pickerFor()" [class]="'absolute -top-12 z-30 ' + (isMe ? 'left-0' : 'right-0')">
+                <!-- Reaction picker — same `bottom-full` anchor as
+                     the toolbar so it visually replaces the toolbar
+                     at the bubble's top edge (the toolbar's *ngIf
+                     hides it when pickerFor is true). Direction
+                     matches the toolbar's (right-2 for isMe,
+                     left-2 for non-me) so the picker grows AWAY
+                     from the pane edge — without this, narrow
+                     bubbles like "hi" pushed the picker off the
+                     conv-pane's left edge and the first emojis
+                     got clipped. -->
+                <div *ngIf="pickerFor() && !inAIConv" #pickerRef
+                     [class]="'absolute bottom-full z-30 ' +
+                              (isMe ? 'right-2' : 'left-2')">
                   <app-reaction-bar [msgId]="msg.id" (react)="onReact($event)"></app-reaction-bar>
                 </div>
               </div>
@@ -252,9 +340,72 @@
 
             <!-- Attachments / link previews / reactions / thread chip —
                  all suppressed on tombstoned messages. The deleted
-                 placeholder is the entire message content. -->
-            <app-attachment-renderer *ngIf="msg.attachments?.length && !msg.deleted" [attachments]="msg.attachments">
-            </app-attachment-renderer>
+                 placeholder is the entire message content.
+                 The wrapping `relative` is what anchors the floating
+                 hover toolbar below to the attachment row when the
+                 message has no bubble body (attachment-only).
+                 `block w-fit max-w-full` shrinks the wrapper to the
+                 attachment card's actual width (so the toolbar's
+                 `right-2` lands on the card's right edge) while
+                 keeping block-flow — `inline-block` made this row
+                 flow inline alongside the sibling text bubble, so
+                 messages with both a text caption AND an attachment
+                 rendered them side-by-side instead of stacked. -->
+            <div *ngIf="msg.attachments?.length && !msg.deleted" class="relative block w-fit max-w-full">
+              <app-attachment-renderer [attachments]="msg.attachments">
+              </app-attachment-renderer>
+              <!-- Fallback hover toolbar — only shows when the bubble
+                   shell is suppressed (attachment-only messages),
+                   otherwise the toolbar inside the bubble handles it.
+                   Keeps reply / react / open-thread / more-menu
+                   reachable for files without a text caption.
+                   `top-0 -translate-y-full` sits the toolbar's bottom
+                   flush with the attachment's top (same pattern as
+                   the main bubble toolbar). -->
+              <div *ngIf="hover() && !hasBubbleBody && !inAIConv"
+                   [class]="'absolute bottom-full z-20 ' +
+                            (isMe ? 'right-2' : 'left-2')">
+                <div class="flex items-center bg-white border border-gray-200 rounded-full shadow-sm">
+                  <button (click)="$event.stopPropagation(); togglePicker()"
+                    class="w-7 h-7 shrink-0 flex items-center justify-center hover:bg-gray-100 rounded-full text-gray-600"
+                    title="Add reaction">
+                    <app-icon name="smile" [size]="14"></app-icon>
+                  </button>
+                  <button (click)="onReply()"
+                    class="w-7 h-7 shrink-0 flex items-center justify-center hover:bg-gray-100 rounded-full text-gray-600"
+                    title="Reply with quote">
+                    <app-icon name="quote" [size]="14"></app-icon>
+                  </button>
+                  <button (click)="openThread.emit(msg.id)"
+                    class="w-7 h-7 shrink-0 flex items-center justify-center hover:bg-gray-100 rounded-full text-gray-600"
+                    [title]="msg.thread ? 'Open thread' : 'Reply in thread'">
+                    <app-icon name="message-circle-more" [size]="14"></app-icon>
+                  </button>
+                  <!-- #menuRef is reused here from the main bubble
+                       toolbar — only one of the two toolbars renders
+                       (gated by hasBubbleBody / !hasBubbleBody), so
+                       the ViewChild query resolves to whichever is in
+                       the DOM. Without this ref on the fallback
+                       wrapper, placeMenu() can't measure the button
+                       and onAway treats every click as "outside" —
+                       which is why the dropdown looked like it
+                       wasn't opening on attachment-only messages. -->
+                  <div class="relative" #menuRef>
+                    <button (click)="$event.stopPropagation(); toggleMenu()"
+                      [class]="'w-7 h-7 shrink-0 flex items-center justify-center rounded-full ' +
+                        (showMenu() ? 'bg-gray-200 text-gray-800' : 'hover:bg-gray-100 text-gray-600')" title="More">
+                      <app-icon name="more-horizontal" [size]="14"></app-icon>
+                    </button>
+                    <!-- Same dropdown the in-bubble toolbar uses,
+                         stamped via ng-template so attachment-only
+                         messages get a working menu too. -->
+                    <ng-container *ngIf="showMenu()">
+                      <ng-container *ngTemplateOutlet="moreDropdown"></ng-container>
+                    </ng-container>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <!-- Inline link previews — one card per URL found in the message
                  body. Rendered after attachments so they don't compete for
@@ -263,24 +414,99 @@
               <app-link-preview *ngFor="let u of links()" [url]="u"></app-link-preview>
             </ng-container>
 
-            <!-- Reaction chips -->
-            <div *ngIf="reactionList().length > 0 && !msg.deleted"
+            <!-- Reaction chips — use Noto images via app-emoji so the
+                 chip glyph matches the picker/quick-bar consistently.
+                 Falls back to the raw Unicode if the conversion gives
+                 an empty code (defensive — shouldn't happen for
+                 well-formed emoji). -->
+            <div *ngIf="reactionList().length > 0 && !msg.deleted && !inAIConv"
               [class]="'flex items-center gap-1 mt-1 ' + (isMe ? 'flex-row-reverse' : '')">
               <button *ngFor="let r of reactionList()" (click)="onReact({ msgId: msg.id, emoji: r.emoji })"
                 [class]="reactionChipClass(r)">
-                <span>{{ r.emoji }}</span>
+                <ng-container *ngIf="codeFor(r.emoji) as c; else rawEmoji">
+                  <app-emoji [code]="c" [name]="r.emoji" [size]="14"></app-emoji>
+                </ng-container>
+                <ng-template #rawEmoji>
+                  <span>{{ r.emoji }}</span>
+                </ng-template>
                 <span class="text-gray-700">{{ r.count }}</span>
               </button>
             </div>
 
-            <!-- Thread chip -->
-            <button *ngIf="msg.thread && !msg.deleted" (click)="openThread.emit(msg.id)"
+            <!-- Thread chip — hidden in AI convs (no threading there). -->
+            <button *ngIf="msg.thread && !msg.deleted && !inAIConv" (click)="openThread.emit(msg.id)"
               class="mt-1 flex items-center gap-2 text-[12px] text-blue-700 hover:underline">
               <app-icon name="chevron-right" [size]="12"></app-icon>
               <span class="font-medium">{{ msg.thread.count }} replies</span>
               <span class="text-gray-500">{{ msg.thread.lastTime }}</span>
             </button>
           </div>
+        </div>
+      </ng-template>
+
+      <!-- Shared "more" dropdown — stamped via *ngTemplateOutlet from
+           both the in-bubble toolbar (for messages with text) AND the
+           fallback toolbar over attachments (for attachment-only
+           messages). One source of truth keeps the action list in
+           sync between the two render paths. The wrapping
+           `<div class="relative">` at each call site anchors the
+           absolutely-positioned panel. -->
+      <ng-template #moreDropdown>
+        <div [class]="moreMenuClass" [style]="moreMenuStyle">
+          <button (click)="copyText()"
+            class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
+            <app-icon name="copy" [size]="14" class="text-gray-500"></app-icon>
+            Copy text
+          </button>
+          <button type="button" (mousedown)="$event.stopPropagation()"
+            (click)="$event.stopPropagation(); onExpandMessage()"
+            class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
+            <app-icon name="maximize-2" [size]="14" class="text-gray-500"></app-icon>
+            Expand
+          </button>
+          <button (click)="onOpenInfo()"
+            class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
+            <app-icon name="check-circle-2" [size]="14" class="text-gray-500"></app-icon>
+            Message info
+          </button>
+          <button (click)="onTogglePin()"
+            class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
+            <app-icon name="pin" [size]="14" [class]="isPinned ? 'text-amber-600' : 'text-gray-500'">
+            </app-icon>
+            {{ isPinned ? 'Unpin' : 'Pin' }}
+          </button>
+          <button (click)="onToggleSave()"
+            class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
+            <app-icon name="bookmark" [size]="14" [class]="isSaved ? 'text-amber-600' : 'text-gray-500'">
+            </app-icon>
+            {{ isSaved ? 'Unsave' : 'Save' }}
+          </button>
+          <button (click)="onEnterBulkForward()"
+            class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
+            <app-icon name="send" [size]="14" class="text-gray-500"></app-icon>
+            Forward
+          </button>
+          <button (click)="onCreateTask()"
+            class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
+            <app-icon name="check-circle-2" [size]="14" class="text-gray-500"></app-icon>
+            Create task
+          </button>
+          <ng-container *ngIf="isMe">
+            <div class="h-px bg-gray-100 my-1"></div>
+            <button (click)="startEdit()"
+              class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 text-gray-700 text-left">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2">
+                <path d="M12 20h9M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />
+              </svg>
+              Edit
+            </button>
+            <button (click)="onConfirmDelete()"
+              class="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-red-50 text-red-600 text-left">
+              <app-icon name="trash-2" [size]="14"></app-icon>
+              Delete
+            </button>
+          </ng-container>
         </div>
       </ng-template>
     </ng-template>

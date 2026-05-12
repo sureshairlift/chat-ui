@@ -12,6 +12,8 @@ import { MENTIONABLE_USERS, MentionableUser } from "../../data/senders";
 import { IconComponent } from "../icon/icon.component";
 import { AvatarComponent } from "../avatar/avatar.component";
 import { ToolbarBtnComponent, ToolbarDividerComponent } from "../toolbar-btn/toolbar-btn.component";
+import { EmojiComponent } from "../emoji/emoji.component";
+import { EMOJI_CATALOG, emojiToUnicode, type EmojiEntry } from "../../data/emoji-catalog";
 
 interface ReplyContext {
   msgId: string;
@@ -92,11 +94,12 @@ const BLOCK_OPTIONS = [
   { value: "PRE", label: "Code block", cls: "font-mono text-[13px]" },
 ];
 
-const EMOJIS = [
-  "😀","😄","😁","😆","😅","🤣","😂","🙂","😉","😍","🥰","😘","😎","🤔","😐","😴",
-  "🤩","🥳","😢","😭","😤","😡","🙏","👍","👎","👏","🙌","💪","🎉","✨","💯","🔥",
-  "❤️","💔","✅","⭐","🚀","💡","📌","🎯","☕","🍕","🍔","🎂",
-];
+// Composer's emoji picker uses the shared Noto catalog so the picker
+// thumbnails match what the bubble renders. Click inserts the actual
+// Unicode codepoint(s) into the message body — storage stays as plain
+// text and any subsequent platform (Slack import, email, CRM mirror)
+// reads as a normal emoji string.
+const EMOJIS: EmojiEntry[] = EMOJI_CATALOG;
 
 /**
  * Rich-text composer based on contenteditable + execCommand.
@@ -128,7 +131,7 @@ const EMOJIS = [
   standalone: true,
   imports: [
     CommonModule, IconComponent, AvatarComponent,
-    ToolbarBtnComponent, ToolbarDividerComponent,
+    ToolbarBtnComponent, ToolbarDividerComponent, EmojiComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./composer.component.html",
@@ -140,6 +143,15 @@ export class ComposerComponent implements OnChanges, OnDestroy {
   private readonly toast = inject(ToastService);
 
   @Input() lastMessageFromOther = false;
+  /** Context-aware reply suggestions derived from the last incoming
+   *  message (see services/reply-suggestions.ts). Empty falls back to
+   *  the generic chip set. Only rendered when `lastMessageFromOther`
+   *  is true — same gate as before. */
+  @Input() replySuggestions: string[] = [];
+  /** True while the LLM round-trip for AI reply hints is in flight.
+   *  The chip row renders skeleton placeholders during this state so
+   *  the user gets immediate feedback that suggestions are loading. */
+  @Input() replySuggestionsLoading = false;
   @Input() isAI = false;
   @Input() isMobile = false;
   @Input() replyingTo: ReplyContext | null = null;
@@ -389,8 +401,11 @@ export class ComposerComponent implements OnChanges, OnDestroy {
     this.updateState();
   }
 
-  insertEmoji(em: string): void {
-    this.insertHTML(em);
+  insertEmoji(em: EmojiEntry): void {
+    // Insert the Unicode codepoint(s) — the message body stays as
+    // portable text. The bubble renders any emoji char with the OS
+    // font; the picker thumbnails are just a richer way to choose.
+    this.insertHTML(emojiToUnicode(em.code));
     this.showEmoji.set(false);
   }
 
@@ -585,6 +600,29 @@ export class ComposerComponent implements OnChanges, OnDestroy {
 
   submitQuick(text: string): void {
     this.handleSend(`<p>${text.replace(/</g, "&lt;")}</p>`);
+  }
+
+  /** Insert a suggestion into the editor without sending. Lets the
+   *  user review / edit / extend before pressing Enter. Used by the
+   *  AI quick-reply chips above the editor — "suggestion", not
+   *  auto-reply. */
+  insertSuggestion(text: string): void {
+    if (!this.editor?.nativeElement) return;
+    const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    this.editor.nativeElement.innerHTML = `<p>${safe}</p>`;
+    this.isEmpty.set(false);
+    // Move caret to the end so the user can keep typing.
+    requestAnimationFrame(() => {
+      const el = this.editor!.nativeElement;
+      el.focus();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    });
+    this.draftChange.emit(this.editor.nativeElement.innerHTML);
   }
 
   handleKeyDown(e: KeyboardEvent): void {

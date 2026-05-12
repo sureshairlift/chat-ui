@@ -28,7 +28,9 @@ export class PinnedPanelComponent implements OnChanges {
 
   @Input() conv: Conversation | null = null;
   @Input() fullscreen = false;
+  @Input() width = 380;
   @Output() closed = new EventEmitter<void>();
+  @Output() startResize = new EventEmitter<MouseEvent>();
 
   pinnedMessages = computed<Message[]>(() => {
     if (!this.conv) return [];

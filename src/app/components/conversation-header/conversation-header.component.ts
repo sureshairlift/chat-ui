@@ -55,6 +55,29 @@ export class ConversationHeaderComponent implements OnDestroy {
 
   @Input({ required: true }) conv!: Conversation;
   @Input() splitPane = true;
+
+  /** While the AI auto-title SSE is streaming, the in-flight text
+   *  for this conv (or empty when nothing is streaming). Drives the
+   *  "typing" effect in the title header.
+   *  Must be a `computed` signal (not a plain method) so the
+   *  OnPush change detector re-renders the template on every delta
+   *  — methods that read signals from the template don't propagate
+   *  invalidations the same way. */
+  streamingTitle = computed<string>(() => {
+    const id = this.conv?.id;
+    if (!id) return "";
+    const entry = this.state.autoTitleByConv()[id];
+    return entry?.streamed || "";
+  });
+
+  /** True once the auto-title SSE has emitted title.end. Used to
+   *  fade the blinking caret next to the streamed text. */
+  streamingTitleDone = computed<boolean>(() => {
+    const id = this.conv?.id;
+    if (!id) return false;
+    const entry = this.state.autoTitleByConv()[id];
+    return !!entry?.done;
+  });
   @Input() isTablet = false;
   @Input() tasksActive = false;
   @Input() pinnedActive = false;
@@ -78,12 +101,17 @@ export class ConversationHeaderComponent implements OnDestroy {
   @Output() toggleFocus = new EventEmitter<void>();
   @Output() togglePinConv = new EventEmitter<void>();
   @Output() markUnread = new EventEmitter<void>();
+  @Output() markAllRead = new EventEmitter<void>();
   @Output() hideConv = new EventEmitter<void>();
   @Output() archiveConv = new EventEmitter<void>();
   @Output() leaveSpace = new EventEmitter<void>();
   @Output() blockReport = new EventEmitter<void>();
   @Output() clearHistory = new EventEmitter<void>();
   @Output() newAIChat = new EventEmitter<void>();
+  /** Edit channel metadata (name / description / icon). Owner+admin only. */
+  @Output() editConv = new EventEmitter<void>();
+  /** Hard-delete the channel. Owner only. */
+  @Output() deleteConv = new EventEmitter<void>();
   /** Pop the conversation out into its own browser window (Google-Chat-style). */
   @Output() openInPopup = new EventEmitter<void>();
   /** Toggle the in-conversation search bar (distinct from the global Cmd+K modal). */
@@ -143,6 +171,22 @@ export class ConversationHeaderComponent implements OnDestroy {
    *  every seeded ref → mock-data record (data/senders.ts). */
   senderForRef(ref: string): { name: string; color: string; initials: string } | null {
     return SENDERS[ref] ?? null;
+  }
+
+  /** Minimal avatar input for the member-pile chips. AvatarComponent
+   *  derives color + initials from `id` (the user_ref) when the
+   *  explicit fields are empty — so the same person renders the
+   *  same hue/initials here as in their bubble and in the sidebar
+   *  conversation row. Uses the API member row's `user_name` when
+   *  present; falls back to the legacy SENDERS map name. */
+  memberPileUser(m: ChannelMember): { id: string; name: string; color: string; initials: string } {
+    const cached = SENDERS[m.user_ref];
+    return {
+      id: m.user_ref,
+      name: m.user_name || cached?.name || m.user_ref,
+      color: "",
+      initials: "",
+    };
   }
 
   /** True for 1:1 channels (direct + ai_direct) — these don't get an
@@ -295,10 +339,13 @@ export class ConversationHeaderComponent implements OnDestroy {
 
   moreItems = computed<MenuItem[]>(() => {
     const m: MenuItem[] = [];
-    if (!this.showBoardInline())     m.push({ icon: "folder-open",    label: "Open board",       onClick: () => this.state.openBoard() });
-    if (!this.showTasksInline())     m.push({ icon: "check-circle-2", label: "Tasks",            onClick: () => this.state.openTasks() });
-    if (!this.showFollowingInline()) m.push({ iconCustom: "threads",  label: "Following",        onClick: () => this.state.openFollowing() });
-    if (!this.showPinnedInline())    m.push({ icon: "pin",            label: "Pinned messages",  onClick: () => this.state.openPinned() });
+    const isAI = !!this.conv?.isAI;
+    if (!this.showBoardInline() && !isAI)     m.push({ icon: "folder-open",    label: "Open board",       onClick: () => this.state.openBoard() });
+    if (!this.showTasksInline() && !isAI)     m.push({ icon: "check-circle-2", label: "Tasks",            onClick: () => this.state.openTasks() });
+    if (!this.showFollowingInline() && !isAI) m.push({ iconCustom: "threads",  label: "Following",        onClick: () => this.state.openFollowing() });
+    // Pinned messages are now hosted inside the Board panel — drop
+    // the standalone entry since "Open board" above already gets
+    // you there.
     if (!this.showSearchInline())    m.push({ icon: "search",         label: "Search",           onClick: () => this.toggleConvSearch.emit() });
     if (!this.showFocusInline() && !this.state.sidebarCollapsed())
                                      m.push({ icon: "maximize-2",     label: "Focus mode",       onClick: () => this.toggleFocus.emit() });
@@ -348,6 +395,8 @@ export class ConversationHeaderComponent implements OnDestroy {
                  onClick: () => this.togglePinConv.emit() });
     items.push({ icon: "folder-open", label: "Shared files & media",
                  onClick: () => this.state.openSharedMedia() });
+    items.push({ icon: "check", label: "Mark all as read",
+                 onClick: () => this.markAllRead.emit() });
     items.push({ icon: "bookmark", label: "Mark as unread",
                  onClick: () => this.markUnread.emit() });
     // Open in popup — hidden for AI sessions (popping the AI out doesn't add
@@ -366,9 +415,14 @@ export class ConversationHeaderComponent implements OnDestroy {
       items.push({ icon: "shield-alert", label: "Block & report", danger: true, onClick: () => this.blockReport.emit() });
     } else if (c.type === "space") {
       items.push({ icon: "plus",            label: "Add people to space", onClick: () => alert(`Add people to ${c.name}`) });
-      items.push({ icon: "more-horizontal", label: "Space settings",      onClick: () => alert(`${c.name} — settings`) });
+      // Edit + delete are owner/admin-only — the backend gates the
+      // request, so we surface the entry universally and let the toast
+      // + 403 path handle the not-allowed case. Cheaper than a
+      // membership check on every menu render.
+      items.push({ icon: "settings",        label: "Edit space",          onClick: () => this.editConv.emit() });
       items.push({ divider: true });
       items.push({ icon: "external-link", label: "Leave space", danger: true, onClick: () => this.leaveSpace.emit() });
+      items.push({ icon: "trash-2",       label: "Delete space", danger: true, onClick: () => this.deleteConv.emit() });
     } else if (c.type === "external" || c.type === "external-group") {
       items.push({ icon: "inbox", label: "Archive conversation", onClick: () => this.archiveConv.emit() });
       items.push({ divider: true });

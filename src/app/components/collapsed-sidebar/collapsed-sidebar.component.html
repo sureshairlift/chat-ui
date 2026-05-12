@@ -60,11 +60,25 @@
             (click)="state.setSection(s.id)"
             (mouseenter)="showTip($event, s.label, 'Custom section')"
             (mouseleave)="hideTip()"
-            [class]="'shrink-0 h-9 w-9 rounded-full flex items-center justify-center transition ' +
+            [class]="'group/cs shrink-0 h-9 w-9 rounded-full flex items-center justify-center transition ' +
                 (state.selectedSection() === s.id ? 'bg-blue-100' : 'hover:bg-gray-100')">
-            <span [class]="'w-6 h-6 rounded-md flex items-center justify-center ' + s.color">
-              <app-icon name="hash" [size]="12" class="text-white"></app-icon>
-            </span>
+            <!-- Emoji (Noto, animated on hover) takes priority over
+                 the colored # chip. PNG at rest, WebP (size 512) on
+                 hover — same png↔webp pattern as the full sidebar.
+                 Fallback handler keeps non-animated emojis showing
+                 the PNG instead of a broken-image icon. -->
+            <ng-container *ngIf="s.emoji as e; else hashChip">
+              <img [src]="e | notoEmoji:'png':72" [alt]="e"
+                   class="w-5 h-5 object-contain group-hover/cs:hidden" />
+              <img [src]="e | notoEmoji:'webp':512" [alt]="e"
+                   (error)="notoWebpFallback($event)"
+                   class="w-5 h-5 object-contain hidden group-hover/cs:block" />
+            </ng-container>
+            <ng-template #hashChip>
+              <span [class]="'w-6 h-6 rounded-md flex items-center justify-center ' + s.color">
+                <app-icon name="hash" [size]="12" class="text-white"></app-icon>
+              </span>
+            </ng-template>
           </button>
         </ng-container>
       </div>
